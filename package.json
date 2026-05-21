@@ -1,0 +1,44 @@
+{
+  "name": "@secapi/sdk-js",
+  "version": "0.3.0",
+  "description": "TypeScript and JavaScript SDK for SEC API",
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "dependencies": {
+    "zod": "^3.24.2"
+  },
+  "scripts": {
+    "build": "rm -rf dist && bun build src/index.ts --outdir dist --format esm --target node && tsc -p tsconfig.build.json",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "sec",
+    "edgar",
+    "financial-data",
+    "mcp"
+  ],
+  "homepage": "https://secapi.ai/developers",
+  "bugs": {
+    "url": "https://docs.secapi.ai/support"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/secapi-ai/secapi-js.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
