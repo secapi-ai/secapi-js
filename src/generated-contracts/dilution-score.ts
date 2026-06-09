@@ -52,7 +52,7 @@ export const dilutionScoreSchema = z.object({
   id: z.string(),
   createdAt: z.string(),
   livemode: z.boolean(),
-  signalKey: z.literal("omni_dilution_score"),
+  signalKey: z.literal("secapi_dilution_score"),
   methodologyVersion: z.string(),
   entityId: z.string(),
   ticker: z.string().nullable().optional(),

@@ -29,7 +29,7 @@ export const EVAL_ENDPOINT_VERSION = 1 as const
  *   - `toolRegistryBreakdown.{explicit,mcp,stub}Count`: 60+35+26 today
  *   - `financeBenchmarkPresetCount`: tools available in the
  *     `finance_benchmark` preset (union across all 11 families)
- *   - `vendorOmniSkillsSha`: git tree-SHA of `vendor/omni/skills` at boot;
+ *   - `vendorSkillsSha`: git tree-SHA of `vendor/omni/skills` at boot;
  *     `null` only when .git is unavailable in the runtime image
  *   - `agentChatCommitSha`: `OMNI_GIT_SHA` env or `git rev-parse HEAD`;
  *     `null` only when neither is available
@@ -51,8 +51,8 @@ export const evalPreservationSchema = z.object({
   financeBenchmarkFamilyCount: z.number().int().positive(),
   financeBenchmarkRoutingLoaded: z.literal(true),
   financialCalculationsEngineLoaded: z.literal(true),
-  vendorOmniSkillsResolved: z.literal(true),
-  vendorOmniSkillsSha: z.string().length(40).nullable(),
+  vendorSkillsResolved: z.literal(true),
+  vendorSkillsSha: z.string().length(40).nullable(),
   agentChatCommitSha: z.string().length(40).nullable(),
   bootTimestamp: z.string().datetime(),
 })
@@ -158,4 +158,4 @@ export type EvalErrorResponse = z.infer<typeof evalErrorResponseSchema>
  * responses, so the harness can verify even on body truncation. Value is
  * `base64(JSON.stringify(preservation))` (no padding).
  */
-export const EVAL_PRESERVATION_HEADER = "x-omni-eval-preservation" as const
+export const EVAL_PRESERVATION_HEADER = "x-secapi-eval-preservation" as const

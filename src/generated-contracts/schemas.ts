@@ -2252,7 +2252,7 @@ export const deliverySummarySchema = z.object({
 
 export const observabilityConfigSchema = z.object({
   object: z.literal("observability_config"),
-  service: z.literal("omni-datastream"),
+  service: z.literal("secapi-api"),
   environment: z.string(),
   baseUrl: z.string().nullable(),
   providers: z.object({

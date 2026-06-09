@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { OmniDatastreamClient, OmniDatastreamError, OmniDatastreamValidationError, type RetryOptions } from "../src/index.js"
+import { SecApiClient, SecApiError, SecApiValidationError, type RetryOptions } from "../src/index.js"
 
 function jsonResponse(status: number, body: unknown = { ok: true }, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
@@ -25,10 +25,10 @@ function retryHarness(overrides: RetryOptions = {}) {
   }
 }
 
-describe("OmniDatastreamClient retry behavior", () => {
-  test("sends SEC API version header plus legacy compatibility header", async () => {
+describe("SecApiClient retry behavior", () => {
+  test("sends SEC API version header", async () => {
     let headers: Headers | null = null
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       telemetry: false,
       apiVersion: "2026-05-20",
       fetch: async (_url, init) => {
@@ -39,13 +39,13 @@ describe("OmniDatastreamClient retry behavior", () => {
 
     await expect(client.health()).resolves.toEqual({ ok: true })
     expect(headers?.get("secapi-version")).toBe("2026-05-20")
-    expect(headers?.get("omni-version")).toBe("2026-05-20")
+    expect(headers?.get(["omni", "version"].join("-"))).toBeNull()
   })
 
   test("retries safe GET requests on retryable 5xx responses", async () => {
     const attempts: string[] = []
     const { delays, retry } = retryHarness()
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       retry,
       telemetry: false,
       fetch: async (url) => {
@@ -62,7 +62,7 @@ describe("OmniDatastreamClient retry behavior", () => {
   test("retries safe GET requests on network errors", async () => {
     let attempts = 0
     const { delays, retry } = retryHarness({ random: () => 0.5 })
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       retry,
       telemetry: false,
       fetch: async () => {
@@ -80,7 +80,7 @@ describe("OmniDatastreamClient retry behavior", () => {
   test("does not retry nonretryable 4xx responses", async () => {
     let attempts = 0
     const { retry } = retryHarness()
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       retry,
       telemetry: false,
       fetch: async () => {
@@ -96,7 +96,7 @@ describe("OmniDatastreamClient retry behavior", () => {
   test("does not retry schema validation failures after successful responses", async () => {
     let attempts = 0
     const { delays, retry } = retryHarness()
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       retry,
       telemetry: false,
       fetch: async () => {
@@ -105,7 +105,7 @@ describe("OmniDatastreamClient retry behavior", () => {
       },
     })
 
-    await expect((client as any).createStreamTicket()).rejects.toBeInstanceOf(OmniDatastreamValidationError)
+    await expect((client as any).createStreamTicket()).rejects.toBeInstanceOf(SecApiValidationError)
     expect(attempts).toBe(1)
     expect(delays).toEqual([])
   })
@@ -113,7 +113,7 @@ describe("OmniDatastreamClient retry behavior", () => {
   test("honors per-call opt-out", async () => {
     let attempts = 0
     const { retry } = retryHarness()
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       retry,
       telemetry: false,
       fetch: async () => {
@@ -129,7 +129,7 @@ describe("OmniDatastreamClient retry behavior", () => {
   test("honors per-call options on query params without serializing them", async () => {
     const seenUrls: string[] = []
     const { retry } = retryHarness()
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       retry,
       telemetry: false,
       fetch: async (url) => {
@@ -146,7 +146,7 @@ describe("OmniDatastreamClient retry behavior", () => {
 
   test("does not attach retry budget timeout when retries are disabled", async () => {
     let seenSignal: AbortSignal | undefined
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       retry: false,
       telemetry: false,
       fetch: async (_url, init) => {
@@ -163,7 +163,7 @@ describe("OmniDatastreamClient retry behavior", () => {
     let attempts = 0
     const seenIdempotencyKeys: Array<string | null> = []
     const { retry } = retryHarness({ enabled: false })
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       retry,
       telemetry: false,
       fetch: async (_url, init) => {
@@ -184,7 +184,7 @@ describe("OmniDatastreamClient retry behavior", () => {
   test("per-call enabled false overrides global enabled true", async () => {
     let attempts = 0
     const { retry } = retryHarness({ enabled: true })
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       retry,
       telemetry: false,
       fetch: async () => {
@@ -201,7 +201,7 @@ describe("OmniDatastreamClient retry behavior", () => {
     let attempts = 0
     const { delays, retry } = retryHarness()
     const controller = new AbortController()
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       retry,
       telemetry: false,
       fetch: async () => {
@@ -235,7 +235,7 @@ describe("OmniDatastreamClient retry behavior", () => {
       return removeEventListener(type, listener, options)
     }) as AbortSignal["removeEventListener"]
 
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       retry: { totalBudgetMs: 30_000 },
       telemetry: false,
       fetch: async () => jsonResponse(200, { ok: true }),
@@ -255,7 +255,7 @@ describe("OmniDatastreamClient retry behavior", () => {
 
   test("raises structured budget errors for internal in-flight aborts", async () => {
     let attempts = 0
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       retry: { totalBudgetMs: 5 },
       telemetry: false,
       fetch: async (_url, init) => {
@@ -272,7 +272,7 @@ describe("OmniDatastreamClient retry behavior", () => {
 
     for (let i = 0; i < 5; i += 1) {
       await expect(client.health()).rejects.toMatchObject({
-        name: "OmniDatastreamError",
+        name: "SecApiError",
         status: 0,
         code: "client_retry_budget_exceeded",
       })
@@ -285,7 +285,7 @@ describe("OmniDatastreamClient retry behavior", () => {
   test("does not retry unsafe POST 503 responses without per-call opt-in", async () => {
     let attempts = 0
     const { retry } = retryHarness()
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       retry,
       telemetry: false,
       fetch: async () => {
@@ -301,7 +301,7 @@ describe("OmniDatastreamClient retry behavior", () => {
   test("per-call opt-in overrides global retry false", async () => {
     let attempts = 0
     const seenIdempotencyKeys: Array<string | null> = []
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       retry: false,
       telemetry: false,
       fetch: async (_url, init) => {
@@ -323,7 +323,7 @@ describe("OmniDatastreamClient retry behavior", () => {
     let now = 0
     let attempts = 0
     const { retry } = retryHarness({ maxRetries: 0, now: () => now })
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       retry,
       telemetry: false,
       fetch: async () => {
@@ -343,7 +343,7 @@ describe("OmniDatastreamClient retry behavior", () => {
   test("retries 429 responses on unsafe methods and honors Retry-After", async () => {
     let attempts = 0
     const { delays, retry } = retryHarness()
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       retry,
       telemetry: false,
       fetch: async () => {
@@ -363,7 +363,7 @@ describe("OmniDatastreamClient retry behavior", () => {
     let attempts = 0
     const seenIdempotencyKeys: Array<string | null> = []
     const { retry } = retryHarness()
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       retry,
       telemetry: false,
       fetch: async (_url, init) => {
@@ -382,7 +382,7 @@ describe("OmniDatastreamClient retry behavior", () => {
     let now = 0
     let attempts = 0
     const { retry } = retryHarness({ maxRetries: 0, now: () => now })
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       retry,
       telemetry: false,
       fetch: async () => {
@@ -407,7 +407,7 @@ describe("OmniDatastreamClient retry behavior", () => {
     const telemetryPayloads: unknown[] = []
     let attempts = 0
     const { retry } = retryHarness()
-    const client = new OmniDatastreamClient({
+    const client = new SecApiClient({
       apiKey: "ods_secret",
       retry,
       telemetry: {
@@ -432,7 +432,7 @@ describe("OmniDatastreamClient retry behavior", () => {
       distinct_id: "sdk-test",
       properties: {
         sdk_language: "js",
-        sdk_version: "0.3.0",
+        sdk_version: "0.4.1",
         method: "GET",
         route: "/v1/filings/latest",
         status: 502,
@@ -441,5 +441,58 @@ describe("OmniDatastreamClient retry behavior", () => {
     })
     expect(JSON.stringify(telemetryPayloads[0])).not.toContain("ods_secret")
     expect(JSON.stringify(telemetryPayloads[0])).not.toContain("AAPL")
+  })
+
+  test("factor parity wrappers route to the launch OpenAPI paths", async () => {
+    const seen: Array<{ url: string; method?: string; body?: string }> = []
+    const client = new SecApiClient({
+      retry: false,
+      telemetry: false,
+      fetch: async (url, init) => {
+        seen.push({ url: String(url), method: init?.method, body: String(init?.body ?? "") })
+        return jsonResponse(200, { ok: true })
+      },
+    })
+
+    await client.factorHistory("MKT/US", { range: "1y", response_mode: "compact" })
+    await client.factorSparklines({ factors: ["MOMENTUM", "VALUE"], points: 32 })
+    await client.factorExtremeMoves({ category: "style", side: "both" })
+    await client.factorExtremePairs({ factors: ["MOMENTUM", "VALUE"], sort: "abs_spread_return" })
+    await client.factorValuations({ side: "tailwind" })
+    await client.factorValuationStocks({ factor: "VALUE", sort: "score" })
+    await client.factorPairs({ factor1: "MOMENTUM", factor2: "VALUE" })
+    await client.factorPairHistory("MOM/US", "VAL/US", { response_mode: "compact" })
+    await client.factorBulkDownload({ factors: ["MOMENTUM"], include: "series" })
+    await client.factorCustom({ symbol: "AAPL" }, { response_mode: "compact" })
+    await client.portfolioAttribution({ holdings: [{ symbol: "AAPL", weight: 1 }] }, { response_mode: "compact" })
+    await client.modelFactorAnalysis({ model: { id: "draft" }, holdings: [{ symbol: "AAPL", weight: 1 }] }, { response_mode: "compact" })
+    await client.portfolioHedge({
+      holdings: [{ symbol: "AAPL", weight: 1 }],
+      constraints: { maxHedges: 1 },
+    }, { response_mode: "compact" })
+
+    expect(seen.map((entry) => new URL(entry.url).pathname)).toEqual([
+      "/v1/factors/history/MKT%2FUS",
+      "/v1/factors/sparklines",
+      "/v1/factors/extreme-moves",
+      "/v1/factors/extreme-pairs",
+      "/v1/factors/valuations",
+      "/v1/factors/valuations/stocks",
+      "/v1/factors/pairs",
+      "/v1/factors/pair-history/MOM%2FUS/VAL%2FUS",
+      "/v1/factors/bulk-download",
+      "/v1/factors/custom",
+      "/v1/portfolio/attribution",
+      "/v1/models/factor-analysis",
+      "/v1/portfolio/hedge",
+    ])
+    expect(new URL(seen[0].url).searchParams.get("response_mode")).toBe("compact")
+    expect(new URL(seen[1].url).searchParams.get("factors")).toBe("MOMENTUM,VALUE")
+    expect(new URL(seen[8].url).searchParams.get("include")).toBe("series")
+    expect(new URL(seen[9].url).searchParams.get("response_mode")).toBe("compact")
+    expect(new URL(seen[12].url).searchParams.get("response_mode")).toBe("compact")
+    expect(seen.slice(9).map((entry) => entry.method)).toEqual(["POST", "POST", "POST", "POST"])
+    expect(seen[12].body).not.toContain("response_mode")
+    expect(seen[12].body).toContain("constraints")
   })
 })

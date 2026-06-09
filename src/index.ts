@@ -59,15 +59,14 @@ import type { z } from "zod"
 
 /**
  * `?view=` response mode. Mirrors the canonical `ResponseView` union in
- * `@omni-datastream/contracts`. Agent mode returns a strictly smaller,
- * essentials+citation-pointers shape on supported endpoints (OMNI-3075 / 3084).
+ * SEC API contracts. Agent mode returns a strictly smaller,
+ * essentials+citation-pointers shape on supported endpoints.
  */
 export type ResponseView = z.infer<typeof responseViewSchema>
 
 const DEFAULT_BASE_URL = "https://api.secapi.ai"
 const DEFAULT_API_VERSION = "2026-03-19"
-const SDK_VERSION = "0.3.0"
-const POSTHOG_CAPTURE_TOKEN = "phc_erM3KBxu4WfepnjJ6TLT11QA0yykiCeRQdi5S4xwCR6"
+const SDK_VERSION = "0.4.1"
 const POSTHOG_CAPTURE_HOST = "https://us.i.posthog.com"
 
 const SAFE_RETRY_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
@@ -82,7 +81,7 @@ const DEFAULT_RETRY_CONFIG = {
   circuitBreakerCooldownMs: 60_000,
 }
 
-export type OmniDatastreamClientOptions = {
+export type SecApiClientOptions = {
   apiKey?: string
   bearerToken?: string
   apiVersion?: string
@@ -92,8 +91,6 @@ export type OmniDatastreamClientOptions = {
   retry?: false | RetryOptions
   telemetry?: false | TelemetryOptions
 }
-
-export type SecApiClientOptions = OmniDatastreamClientOptions
 
 export type RetryOptions = {
   enabled?: boolean
@@ -131,6 +128,83 @@ export type JsonValue =
 
 export type RequestParams<T extends Record<string, unknown>> = T & RequestOptions
 
+export type FactorApiResponseMode = "compact" | "standard" | "verbose"
+
+type FactorResponseControls = {
+  response_mode?: FactorApiResponseMode
+  include?: string | string[]
+}
+
+type FactorKeySelection = FactorResponseControls & {
+  keys?: string | string[]
+  factors?: string | string[]
+  category?: string
+  window?: string
+  lookback?: string
+}
+
+type PortfolioHoldingInput = {
+  symbol: string
+  weight: number
+  shares?: number | null
+  costBasis?: number | null
+}
+
+type FactorPostQueryControls = FactorResponseControls
+
+type FactorCustomDiscoveryRequest = {
+  symbol?: string
+  symbols?: string[]
+  candidates?: string[]
+  lookback?: string
+  limit?: number
+}
+
+type PortfolioAnalysisRequest = {
+  holdings: PortfolioHoldingInput[]
+  country?: string
+  lookback?: string
+  category?: string
+  keys?: string[]
+}
+
+type PortfolioAttributionRequest = PortfolioAnalysisRequest & {
+  window?: string
+  category?: string
+}
+
+type PortfolioOptimizeRequest = PortfolioAnalysisRequest & {
+  category?: string
+  objective?: "factor_neutral" | "min_drawdown" | "regime_aware"
+  maxHedges?: number
+}
+
+type PortfolioHedgeRequest = PortfolioAnalysisRequest & {
+  objective?: "factor_neutral" | "min_drawdown" | "regime_aware"
+  mode?: "compact" | "standard"
+  constraints?: Record<string, unknown>
+}
+
+type PortfolioStressTestRequest = {
+  holdings: PortfolioHoldingInput[]
+  country?: string
+  lookback?: string
+  category?: string
+  scenarioKey?: "us_recession" | "higher_for_longer" | "china_growth_scare"
+}
+
+type ModelFactorAnalysisRequest = {
+  model?: Record<string, unknown>
+  country?: string
+  lookback?: string
+  window?: string
+  category?: string
+  keys?: string[]
+  include?: Record<string, unknown>
+  hedge?: Record<string, unknown>
+  holdings: PortfolioHoldingInput[]
+}
+
 type ParsedResponse = {
   payload: unknown
   requestId?: string
@@ -160,8 +234,8 @@ class ClientCircuitBreaker {
       this.state = "half_open"
       return
     }
-    throw new OmniDatastreamError({
-      message: "Omni Datastream client circuit breaker is open",
+    throw new SecApiError({
+      message: "SEC API client circuit breaker is open",
       status: 0,
       code: "client_circuit_open",
     })
@@ -190,7 +264,7 @@ class ClientCircuitBreaker {
   }
 }
 
-export class OmniDatastreamError extends Error {
+export class SecApiError extends Error {
   readonly status: number
   readonly code?: string
   readonly requestId?: string
@@ -199,7 +273,7 @@ export class OmniDatastreamError extends Error {
 
   constructor(args: { message: string; status: number; code?: string; requestId?: string; body?: unknown; retryAfterMs?: number }) {
     super(args.message)
-    this.name = "OmniDatastreamError"
+    this.name = "SecApiError"
     this.status = args.status
     this.code = args.code
     this.requestId = args.requestId
@@ -208,13 +282,13 @@ export class OmniDatastreamError extends Error {
   }
 }
 
-export class OmniDatastreamValidationError extends Error {
+export class SecApiValidationError extends Error {
   readonly raw: unknown
   readonly issues: unknown[]
 
   constructor(raw: unknown, issues: unknown[]) {
     super(`Response validation failed: ${issues.length} issue(s)`)
-    this.name = "OmniDatastreamValidationError"
+    this.name = "SecApiValidationError"
     this.raw = raw
     this.issues = issues
   }
@@ -223,7 +297,7 @@ export class OmniDatastreamValidationError extends Error {
 function parseWithSchema<S extends ZodType>(schema: S, data: unknown): z.infer<S> {
   const result = schema.safeParse(data)
   if (result.success) return result.data
-  throw new OmniDatastreamValidationError(data, result.error.issues)
+  throw new SecApiValidationError(data, result.error.issues)
 }
 
 function isRequestOptionKey(key: string) {
@@ -342,8 +416,8 @@ function isAbortError(error: unknown) {
 }
 
 function retryBudgetExceededError() {
-  return new OmniDatastreamError({
-    message: "Omni Datastream request exceeded retry budget",
+  return new SecApiError({
+    message: "SEC API request exceeded retry budget",
     status: 0,
     code: "client_retry_budget_exceeded",
   })
@@ -419,19 +493,19 @@ function buildErrorMessage(status: number, requestId: string | undefined, payloa
         ? String((payload as Record<string, unknown>).error)
       : typeof payload === "string" && payload.trim()
         ? payload.trim()
-        : `Omni Datastream request failed with status ${status}`
+        : `SEC API request failed with status ${status}`
 
   return requestId ? `${message} (request_id: ${requestId})` : message
 }
 
-export class OmniDatastreamClient {
+export class SecApiClient {
   private readonly circuitBreaker = new ClientCircuitBreaker(
     DEFAULT_RETRY_CONFIG.circuitBreakerFailureThreshold,
     DEFAULT_RETRY_CONFIG.circuitBreakerCooldownMs,
   )
   private readonly telemetryDistinctId = randomId()
 
-  constructor(private readonly options: OmniDatastreamClientOptions = {}) {}
+  constructor(private readonly options: SecApiClientOptions = {}) {}
 
   get baseUrl() {
     return (this.options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "")
@@ -444,7 +518,6 @@ export class OmniDatastreamClient {
   private headers(initHeaders?: HeadersInit) {
     const headers = new Headers(this.options.headers)
     headers.set("secapi-version", this.options.apiVersion ?? DEFAULT_API_VERSION)
-    headers.set("omni-version", this.options.apiVersion ?? DEFAULT_API_VERSION)
 
     if (this.options.bearerToken) {
       headers.set("Authorization", `Bearer ${this.options.bearerToken}`)
@@ -502,9 +575,9 @@ export class OmniDatastreamClient {
   }): RetryDecision {
     if (args.retryDisabled) return { retryable: false, reason: "disabled" }
     if (isAbortError(args.error)) return { retryable: false, reason: "aborted" }
-    if (args.error instanceof OmniDatastreamValidationError) return { retryable: false, reason: "validation" }
+    if (args.error instanceof SecApiValidationError) return { retryable: false, reason: "validation" }
 
-    if (args.error instanceof OmniDatastreamError) {
+    if (args.error instanceof SecApiError) {
       const status = args.error.status
       if (NEVER_RETRY_STATUSES.has(status)) return { retryable: false, status, reason: "non_retryable_status" }
       if (!RETRYABLE_STATUSES.has(status)) return { retryable: false, status, reason: "status" }
@@ -531,7 +604,7 @@ export class OmniDatastreamClient {
     const { disabled, options } = mergeTelemetryOptions(this.options.telemetry, args.requestOptions?.telemetry)
     if (disabled) return
 
-    const captureToken = options.captureToken ?? POSTHOG_CAPTURE_TOKEN
+    const captureToken = options.captureToken
     const host = (options.host ?? POSTHOG_CAPTURE_HOST).replace(/\/$/, "")
     const fetchImpl = options.fetch ?? globalThis.fetch
     if (!captureToken || typeof fetchImpl !== "function") return
@@ -609,7 +682,7 @@ export class OmniDatastreamClient {
         const { payload, requestId } = await this.parseResponse(response)
 
         if (!response.ok) {
-          throw new OmniDatastreamError({
+          throw new SecApiError({
             message: buildErrorMessage(response.status, requestId, payload),
             status: response.status,
             code: extractErrorCode(payload),
@@ -631,7 +704,7 @@ export class OmniDatastreamClient {
         }
         lastError = error
         const decision = this.shouldRetry({ error, method, retryDisabled, unsafeOptIn })
-        const retryAfterMs = error instanceof OmniDatastreamError && decision.status === 429 ? error.retryAfterMs : undefined
+        const retryAfterMs = error instanceof SecApiError && decision.status === 429 ? error.retryAfterMs : undefined
 
         if (!decision.retryable || attempt >= maxRetries) {
           if (decision.retryable && circuitEligible) this.circuitBreaker.recordFailure(now())
@@ -671,8 +744,8 @@ export class OmniDatastreamClient {
       }
     }
 
-    throw lastError instanceof Error ? lastError : new OmniDatastreamError({
-      message: "Omni Datastream request failed",
+    throw lastError instanceof Error ? lastError : new SecApiError({
+      message: "SEC API request failed",
       status: 0,
       code: "client_request_failed",
     })
@@ -1163,47 +1236,71 @@ export class OmniDatastreamClient {
     return this.get("/v1/macro/regimes", params)
   }
 
-  async factorCatalog(params: RequestParams<{ category?: string; keys?: string | string[] }> = {}) {
+  async factorCatalog(params: RequestParams<FactorKeySelection> = {}) {
     return this.get("/v1/factors/catalog", params)
   }
 
-  async factorReturns(params: RequestParams<{ keys?: string | string[]; category?: string; window?: string; lookback?: string }> = {}) {
+  async factorReturns(params: RequestParams<FactorKeySelection> = {}) {
     return this.get("/v1/factors/returns", params)
   }
 
-  async factorReturnsIntraday(params: RequestParams<{ keys?: string | string[]; category?: string; window?: string }> = {}) {
+  async factorHistory(factorKey: string, params: RequestParams<FactorResponseControls & { range?: string; date_from?: string; date_to?: string }> = {}) {
+    return this.get(`/v1/factors/history/${encodeURIComponent(factorKey)}`, params)
+  }
+
+  async factorSparklines(params: RequestParams<FactorKeySelection & { range?: string; metric?: "scaled_return" | "pure_return" | "raw_return" | "z_score"; points?: number; date_from?: string; date_to?: string }> = {}) {
+    return this.get("/v1/factors/sparklines", params)
+  }
+
+  async factorReturnsIntraday(params: RequestParams<FactorKeySelection> = {}) {
     return this.get("/v1/factors/returns/intraday", params)
   }
 
-  async factorDashboard(params: RequestParams<{ country?: string; category?: string; window?: string; lookback?: string; limit?: number; ticker?: string; portfolioId?: string; keys?: string | string[] }> = {}) {
+  async factorDashboard(params: RequestParams<FactorKeySelection & { country?: string; limit?: number; ticker?: string; portfolioId?: string }> = {}) {
     return this.get("/v1/factors/dashboard", params)
   }
 
-  async factorRegimePerformance(params: RequestParams<{ country?: string; category?: string; window?: string; lookback?: string; limit?: number }> = {}) {
+  async factorRegimePerformance(params: RequestParams<FactorKeySelection & { country?: string; limit?: number }> = {}) {
     return this.get("/v1/factors/regime-performance", params)
   }
 
-  async factorCorrelations(params: RequestParams<{ keys?: string | string[]; category?: string; lookback?: string }> = {}) {
+  async factorCorrelations(params: RequestParams<FactorKeySelection> = {}) {
     return this.get("/v1/factors/correlations", params)
   }
 
-  async factorScreen(params: RequestParams<{ category?: string; window?: string; lookback?: string; limit?: number }> = {}) {
+  async factorScreen(params: RequestParams<FactorKeySelection & { limit?: number }> = {}) {
     return this.get("/v1/factors/screen", params)
   }
 
-  async factorExposures(params: RequestParams<{ symbols: string | string[]; category?: string; lookback?: string }>) {
+  async factorExtremeMoves(params: RequestParams<FactorKeySelection & { limit?: number; side?: "both" | "up" | "down" | "flat"; sort?: "abs_z_score" | "abs_scaled_return"; min_z_score?: number }> = {}) {
+    return this.get("/v1/factors/extreme-moves", params)
+  }
+
+  async factorExtremePairs(params: RequestParams<FactorKeySelection & { limit?: number; side?: string; direction?: string; min_z_score?: number; sort?: string }> = {}) {
+    return this.get("/v1/factors/extreme-pairs", params)
+  }
+
+  async factorValuations(params: RequestParams<FactorKeySelection & { side?: "tailwind" | "headwind" | "neutral" | "all"; signal?: "tailwind" | "headwind" | "neutral" | "all"; sort?: string; limit?: number }> = {}) {
+    return this.get("/v1/factors/valuations", params)
+  }
+
+  async factorValuationStocks(params: RequestParams<FactorKeySelection & { factor?: string; factorKey?: string; key?: string; signal?: "all" | "tailwind" | "headwind" | "neutral"; stance?: "beneficiaries" | "at_risk" | "both"; side?: string; direction?: string; limit?: number; sort?: "score" | "abs_beta" | "symbol" }> = {}) {
+    return this.get("/v1/factors/valuations/stocks", params)
+  }
+
+  async factorExposures(params: RequestParams<FactorKeySelection & { symbols: string | string[] }>) {
     return this.get("/v1/factors/exposures", params)
   }
 
-  async stockLoadings(ticker: string, params: RequestParams<{ keys?: string | string[]; category?: string; lookback?: string }> = {}) {
+  async stockLoadings(ticker: string, params: RequestParams<FactorKeySelection> = {}) {
     return this.get(`/v1/stocks/${encodeURIComponent(ticker)}/loadings`, params)
   }
 
-  async factorDecomposition(params: RequestParams<{ symbol: string; lookback?: string; window?: string }>) {
+  async factorDecomposition(params: RequestParams<FactorKeySelection & { symbol: string }>) {
     return this.get("/v1/factors/decomposition", params)
   }
 
-  async factorRelatedStocks(params: RequestParams<{ symbol: string; candidates?: string | string[]; lookback?: string; limit?: number }>) {
+  async factorRelatedStocks(params: RequestParams<FactorKeySelection & { symbol: string; candidates?: string | string[]; limit?: number }>) {
     return this.get("/v1/factors/related-stocks", params)
   }
 
@@ -1211,47 +1308,76 @@ export class OmniDatastreamClient {
     return this.get("/v1/factors/similarity-pack", params)
   }
 
-  async portfolioAnalyze(body: {
-    holdings: Array<{ symbol: string; weight: number; shares?: number | null; costBasis?: number | null }>
-    country?: string
-    lookback?: string
-    category?: string
-  }, options?: RequestOptions) {
-    return this.request("/v1/portfolio/analyze", {
+  async factorPairs(params: RequestParams<FactorResponseControls & { factor1?: string; factor2?: string; f1?: string; f2?: string; window?: string; lookback?: string }> = {}) {
+    return this.get("/v1/factors/pairs", params)
+  }
+
+  async factorPairHistory(f1: string, f2: string, params: RequestParams<FactorResponseControls & { window?: string; lookback?: string; range?: string }> = {}) {
+    return this.get(`/v1/factors/pair-history/${encodeURIComponent(f1)}/${encodeURIComponent(f2)}`, params)
+  }
+
+  async factorBulkDownload(params: RequestParams<FactorKeySelection> = {}) {
+    return this.get("/v1/factors/bulk-download", params)
+  }
+
+  async factorCustom(body: FactorCustomDiscoveryRequest, params: RequestParams<FactorPostQueryControls> = {}, options?: RequestOptions) {
+    return this.request(buildUrl("/v1/factors/custom", params), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-    }, undefined, options)
+    }, undefined, mergeRequestOptions(requestOptionsFromParams(params), options))
   }
 
-  async modelPortfolioFactorView(portfolioId: string, params: RequestParams<{ keys?: string | string[]; category?: string; lookback?: string }> = {}) {
+  async portfolioAnalyze(body: PortfolioAnalysisRequest, params: RequestParams<FactorPostQueryControls> = {}, options?: RequestOptions) {
+    return this.request(buildUrl("/v1/portfolio/analyze", params), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }, undefined, mergeRequestOptions(requestOptionsFromParams(params), options))
+  }
+
+  async portfolioAttribution(body: PortfolioAttributionRequest, params: RequestParams<FactorPostQueryControls> = {}, options?: RequestOptions) {
+    return this.request(buildUrl("/v1/portfolio/attribution", params), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }, undefined, mergeRequestOptions(requestOptionsFromParams(params), options))
+  }
+
+  async modelPortfolioFactorView(portfolioId: string, params: RequestParams<FactorKeySelection> = {}) {
     return this.get(`/v1/model-portfolios/${encodeURIComponent(portfolioId)}/factor-view`, params)
   }
 
-  async portfolioOptimize(body: {
-    holdings: Array<{ symbol: string; weight: number; shares?: number | null; costBasis?: number | null }>
-    country?: string
-    lookback?: string
-    objective?: "factor_neutral" | "min_drawdown" | "regime_aware"
-  }, options?: RequestOptions) {
-    return this.request("/v1/portfolio/optimize", {
+  async modelFactorAnalysis(body: ModelFactorAnalysisRequest, params: RequestParams<FactorPostQueryControls> = {}, options?: RequestOptions) {
+    return this.request(buildUrl("/v1/models/factor-analysis", params), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-    }, undefined, options)
+    }, undefined, mergeRequestOptions(requestOptionsFromParams(params), options))
   }
 
-  async portfolioStressTest(body: {
-    holdings: Array<{ symbol: string; weight: number; shares?: number | null; costBasis?: number | null }>
-    country?: string
-    lookback?: string
-    scenario_key?: string
-  }, options?: RequestOptions) {
-    return this.request("/v1/portfolio/stress-test", {
+  async portfolioOptimize(body: PortfolioOptimizeRequest, params: RequestParams<FactorPostQueryControls> = {}, options?: RequestOptions) {
+    return this.request(buildUrl("/v1/portfolio/optimize", params), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-    }, undefined, options)
+    }, undefined, mergeRequestOptions(requestOptionsFromParams(params), options))
+  }
+
+  async portfolioHedge(body: PortfolioHedgeRequest, params: RequestParams<FactorPostQueryControls> = {}, options?: RequestOptions) {
+    return this.request(buildUrl("/v1/portfolio/hedge", params), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }, undefined, mergeRequestOptions(requestOptionsFromParams(params), options))
+  }
+
+  async portfolioStressTest(body: PortfolioStressTestRequest, params: RequestParams<FactorPostQueryControls> = {}, options?: RequestOptions) {
+    return this.request(buildUrl("/v1/portfolio/stress-test", params), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }, undefined, mergeRequestOptions(requestOptionsFromParams(params), options))
   }
 
   async strategyFactorRotation(body: { country?: string; category?: string; window?: string; lookback?: string; limit?: number } = {}, options?: RequestOptions) {
@@ -1518,16 +1644,16 @@ export class OmniDatastreamClient {
    * Open a WebSocket connection for real-time filing event streaming.
    *
    * Uses the global `WebSocket` constructor (Node 21+, Bun, Deno, browsers).
-   * Returns an `OmniFilingStream` with typed event callbacks and auto-reconnect.
+   * Returns a `SecApiFilingStream` with typed event callbacks and auto-reconnect.
    */
-  streamFilings(params: StreamFilingsParams = {}): OmniFilingStream {
+  streamFilings(params: StreamFilingsParams = {}): SecApiFilingStream {
     const streamState: { forms?: string | string[]; tickers?: string | string[]; cursor?: string } = {
       forms: params.forms,
       tickers: params.tickers,
       cursor: params.cursor,
     }
 
-    return new OmniFilingStream(async (cursor) => {
+    return new SecApiFilingStream(async (cursor) => {
       const ticket = await this.createStreamTicket()
       return this.baseUrl.replace(/^http/, "ws") + buildUrl("/v1/stream/ws", {
         forms: streamState.forms,
@@ -1610,7 +1736,7 @@ type StreamInternalOptions = {
   onClose?: (code: number, reason: string) => void
 }
 
-export class OmniFilingStream {
+export class SecApiFilingStream {
   private ws: WebSocket | null = null
   private closed = false
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -1728,9 +1854,12 @@ export class OmniFilingStream {
 }
 
 export {
-  OmniDatastreamClient as SecApiClient,
-  OmniDatastreamError as SecApiError,
+  SecApiClient as OmniDatastreamClient,
+  SecApiError as OmniDatastreamError,
+  SecApiValidationError as OmniDatastreamValidationError,
 }
+
+export type OmniDatastreamClientOptions = SecApiClientOptions
 
 export type {
   Entity,

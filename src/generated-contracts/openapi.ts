@@ -214,9 +214,9 @@ export const openApiDocument = {
     "/v1/stream/ws": {
       get: {
         summary: "Upgrade to a WebSocket connection for real-time filing event streaming",
-        description: "Upgrades the HTTP connection to a WebSocket. Clients should supply a short-lived signed `ticket` query parameter minted from `POST /v1/stream/tickets`; legacy `api_key` and `bearer_token` query auth remains temporarily supported for backward compatibility while clients migrate. Streams `filing.published` events in real time with optional form/ticker filtering and cursor-based replay. Metered as `stream_connection` on upgrade and `stream_event` per delivery (1000/min default).",
+        description: "Upgrades the HTTP connection to a WebSocket. Clients must supply a short-lived signed `ticket` query parameter minted from `POST /v1/stream/tickets`. Streams `filing.published` events in real time with optional form/ticker filtering and cursor-based replay. Metered as `stream_connection` on upgrade and `stream_event` per delivery (1000/min default).",
         parameters: [
-          { name: "ticket", in: "query", schema: { type: "string" }, description: "Preferred short-lived signed stream ticket minted from `POST /v1/stream/tickets`." },
+          { name: "ticket", in: "query", schema: { type: "string" }, description: "Short-lived signed stream ticket minted from `POST /v1/stream/tickets`." },
           { name: "forms", in: "query", schema: { type: "string" }, description: "Comma-separated form types to filter (e.g. '10-K,8-K'). Case-insensitive." },
           { name: "tickers", in: "query", schema: { type: "string" }, description: "Comma-separated tickers to filter (e.g. 'AAPL,MSFT'). Case-insensitive." },
           { name: "cursor", in: "query", schema: { type: "string" }, description: "Resume from a previous event cursor (e.g. 'sevt_...'). Events after this cursor are replayed on connect." },
