@@ -54,6 +54,7 @@ export const v1MaintenanceWarmFactorDataBodySchema = z
     categories: z.union([z.array(z.string()), z.string()]).optional(),
     lookback: z.string().optional(),
     refreshLive: z.union([z.boolean(), z.string()]).optional(),
+    precomputeRouteResponses: z.union([z.boolean(), z.string()]).optional(),
   })
   .passthrough()
 
@@ -67,6 +68,7 @@ export const v1MaintenanceWarmFactorIntradayBodySchema = z
 export const v1MaintenanceMaterializeInvestorDataPlaneBodySchema = z
   .object({
     mode: z.enum(["all", "market", "macro", "factor", "factor_intraday", "intelligence"]).optional(),
+    factorMaintenanceSubprocessTimeoutMs: z.union([z.number(), z.string()]).optional(),
     market: z.object({
       symbols: z.union([z.array(z.string()), z.string()]).optional(),
       datasets: z.union([z.array(z.string()), z.string()]).optional(),
@@ -93,7 +95,11 @@ export const v1MaintenanceMaterializeInvestorDataPlaneBodySchema = z
       lookback: z.string().optional(),
       returnSurfaceLookback: z.string().optional(),
       refreshLive: z.union([z.boolean(), z.string()]).optional(),
+      includeWarm: z.union([z.boolean(), z.string()]).optional(),
       includeIntraday: z.union([z.boolean(), z.string()]).optional(),
+      includePortfolios: z.union([z.boolean(), z.string()]).optional(),
+      includeAllFactorDecomposition: z.union([z.boolean(), z.string()]).optional(),
+      precomputeRouteResponses: z.union([z.boolean(), z.string()]).optional(),
       intradayWindows: z.union([z.array(z.string()), z.string()]).optional(),
     }).optional(),
     factorIntraday: z.object({
@@ -112,7 +118,7 @@ export const v1MaintenanceMaterializeInvestorDataPlaneBodySchema = z
 
 export const v1CompanyMappingIdentifiersBodySchema = z
   .object({
-    rows: z.array(z.record(z.unknown())).optional(),
+    rows: z.array(z.record(z.string(), z.unknown())).optional(),
     indexCodes: z.union([z.array(z.string()), z.string()]).optional(),
     dryRun: z.union([z.boolean(), z.string()]).optional(),
     limitPerIndex: z.union([z.number(), z.string()]).optional(),
@@ -163,7 +169,7 @@ export const v1CreateArtifactBodySchema = z
   })
   .passthrough()
 
-export const v1AnalyticsQueryBodySchema = z.record(z.unknown())
+export const v1AnalyticsQueryBodySchema = z.record(z.string(), z.unknown())
 
 /** Strict empty body — rejects unexpected keys on POST endpoints that take no payload. */
 export const v1StrictEmptyPostBodySchema = z.object({}).strict()
@@ -233,7 +239,7 @@ export const v1CreateMonitorBodySchema = z.preprocess(
       // fail validation rather than persisting as empty strings.
       name: z.string().trim().min(1),
       query: z.string().trim().min(1),
-      filters: z.record(z.unknown()).nullish(),
+      filters: z.record(z.string(), z.unknown()).nullish(),
       /** Only `keyword` is currently supported for monitor execution. */
       searchMode: z.enum(["keyword"]).nullish(),
       /** Legacy single-webhook path. Kept for backward compat with existing clients. */

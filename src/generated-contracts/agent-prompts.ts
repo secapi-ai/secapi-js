@@ -6,7 +6,7 @@
  *   - Mintlify docs (`apps/docs/content/agents/prompt-library/<persona>.md`)
  *   - Persona vertical pages (`<Prompt>` block at the bottom of each
  *     `apps/docs/content/for-<persona>.md` mirrors the position-#1 prompt)
- *   - CLI (`omni-sec agents prompts list/read/copy`)
+ *   - CLI (`secapi agents prompts list/read/copy`)
  *   - Validation gates (`scripts/validate/check_agent_prompt_library.ts` and
  *     `scripts/validate/check_agent_prompt_live.ts`)
  *
