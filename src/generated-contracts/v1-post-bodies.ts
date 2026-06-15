@@ -100,7 +100,12 @@ export const v1MaintenanceMaterializeInvestorDataPlaneBodySchema = z
       includePortfolios: z.union([z.boolean(), z.string()]).optional(),
       includeAllFactorDecomposition: z.union([z.boolean(), z.string()]).optional(),
       precomputeRouteResponses: z.union([z.boolean(), z.string()]).optional(),
+      materializePrerequisites: z.union([z.boolean(), z.string()]).optional(),
       intradayWindows: z.union([z.array(z.string()), z.string()]).optional(),
+      stockBasketInputPath: z.string().optional(),
+      requiredStockBasketStartDate: z.string().optional(),
+      stockBasketRequiredStartDateByFactorKey: z.record(z.string(), z.string()).optional(),
+      stockBasketStartToleranceDays: z.union([z.number(), z.string()]).optional(),
     }).optional(),
     factorIntraday: z.object({
       categories: z.union([z.array(z.string()), z.string()]).optional(),

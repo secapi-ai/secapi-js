@@ -5,12 +5,117 @@ export const responseMetadataSchema = z.object({
   traceparent: z.string().nullable().optional(),
 })
 
+/**
+ * Freshness status semantics.
+ *
+ * For row-level datasets that are continuously refreshed (factors, market,
+ * macro) the historical `fresh`/`stale`/`degraded`/`unknown` values describe how
+ * recently the underlying source was observed.
+ *
+ * For immutable SEC filings, freshness is the PIPELINE lag — the time between
+ * SEC acceptance (`sourcePublishedAt`) and the moment we materialized the
+ * record — NOT the age of the document. An immutable historical filing that we
+ * hold fully materialized is healthy regardless of how old the document is, so
+ * it reads:
+ *   - `current`  — recently published and materialized; the pipeline is keeping up.
+ *   - `archival` — an immutable historical document we hold in full; the
+ *                  publish→materialize span is not a pipeline signal.
+ * `degraded`/`stale` are reserved for a genuinely-lagged ingest: a
+ * recently-published filing whose materialization fell behind the freshness
+ * thresholds. This prevents old immutable filings (e.g. a years-old 10-K) from
+ * being mislabeled `stale` simply because they were published long ago.
+ */
+export const freshnessStatusSchema = z.enum([
+  "fresh",
+  "current",
+  "archival",
+  "stale",
+  "degraded",
+  "unknown",
+])
+
 export const freshnessMetadataSchema = z.object({
-  status: z.enum(["fresh", "stale", "degraded", "unknown"]),
+  status: freshnessStatusSchema,
   asOf: z.string(),
   sourcePublishedAt: z.string().nullable().optional(),
   lagMs: z.number().int().nonnegative().nullable().optional(),
 })
+
+export type FreshnessStatus = z.infer<typeof freshnessStatusSchema>
+
+const DEFAULT_FILING_FRESH_MS = 24 * 60 * 60 * 1000
+const DEFAULT_FILING_DEGRADED_MS = 72 * 60 * 60 * 1000
+// A document published more than this far in the past is treated as an
+// immutable historical/backfill document. This must be comfortably larger than
+// the degraded *lag* threshold so that a recently-published filing whose
+// materialization merely lagged by a few days is NOT misclassified as archival
+// — its high pipeline lag is a real ingest problem and must surface as
+// `degraded`/`stale`.
+const DEFAULT_FILING_ARCHIVAL_AGE_MS = 30 * 24 * 60 * 60 * 1000
+
+/**
+ * Derive filing-level freshness from PIPELINE lag (SEC acceptance →
+ * materialization), not document age.
+ *
+ * - Returns `lagMs` = max(0, materializedAt − sourcePublishedAt) for telemetry
+ *   continuity (this is the publish→materialize pipeline latency).
+ * - `stale`/`degraded` are driven by PIPELINE lag and are the dead-man signal
+ *   for ingestion falling behind. They must keep firing for a genuinely-lagged
+ *   materialization of a *recently-published* filing — even when freshness is
+ *   computed at materialization time (the production path omits `now`, so
+ *   `now ≈ materializedAt`).
+ * - `archival` is reserved for immutable *historical* documents: a filing
+ *   published longer ago than the archival age threshold. Their
+ *   publish→materialize span reflects a backfill, not live-pipeline lag, so they
+ *   read `archival` regardless of how large that span is (e.g. a years-old 10-K
+ *   materialized today is `archival`, never `stale`).
+ * - `current` is a recently-published filing materialized promptly.
+ * - Missing timestamps → `unknown`.
+ *
+ * The archival age threshold is deliberately much larger than the degraded lag
+ * threshold so the two concerns do not collide: a 4-day ingest lag on a filing
+ * published this week reads `stale` (real problem), while a filing published
+ * years ago reads `archival` (immutable backfill).
+ */
+export function deriveFilingFreshness(input: {
+  sourcePublishedAt: string | null | undefined
+  materializedAt: string | null | undefined
+  now?: number
+  freshThresholdMs?: number
+  degradedThresholdMs?: number
+  archivalAgeThresholdMs?: number
+}): { status: FreshnessStatus; lagMs: number | null } {
+  const freshThresholdMs = input.freshThresholdMs ?? DEFAULT_FILING_FRESH_MS
+  const degradedThresholdMs = input.degradedThresholdMs ?? DEFAULT_FILING_DEGRADED_MS
+  const archivalAgeThresholdMs = input.archivalAgeThresholdMs ?? DEFAULT_FILING_ARCHIVAL_AGE_MS
+
+  const publishedMs = input.sourcePublishedAt ? Date.parse(input.sourcePublishedAt) : NaN
+  const materializedMs = input.materializedAt ? Date.parse(input.materializedAt) : NaN
+
+  if (!Number.isFinite(publishedMs) || !Number.isFinite(materializedMs)) {
+    return { status: "unknown", lagMs: null }
+  }
+
+  const lagMs = Math.max(0, materializedMs - publishedMs)
+  const now = input.now ?? Date.now()
+  const documentAgeMs = Math.max(0, now - publishedMs)
+
+  // Immutable historical document: published far enough in the past that the
+  // publish→materialize span reflects a backfill, not live-pipeline lag. The
+  // archival age threshold is much larger than the degraded lag threshold so a
+  // merely-lagged recent filing is NOT swept up here — its lag still surfaces
+  // below as the genuine ingest signal.
+  if (documentAgeMs > archivalAgeThresholdMs) {
+    return { status: "archival", lagMs }
+  }
+
+  // Recently-published filing: pipeline lag is the live ingest signal. A high
+  // publish→materialize lag here is a real problem (the dead-man indicator for
+  // ingestion lag) and must read `degraded`/`stale`.
+  if (lagMs <= freshThresholdMs) return { status: "current", lagMs }
+  if (lagMs <= degradedThresholdMs) return { status: "degraded", lagMs }
+  return { status: "stale", lagMs }
+}
 
 export const materializationMetadataSchema = z.object({
   parserVersion: z.string(),
@@ -155,7 +260,7 @@ export type ValidationStatus = z.infer<typeof validationStatusSchema>
 export const dataQualityFreshnessSchema = z.object({
   latestObservationAt: z.string().nullable(),
   averageLagMs: z.number().nonnegative().nullable(),
-  status: z.enum(["fresh", "stale", "degraded", "unknown"]),
+  status: freshnessStatusSchema,
   observationCount: z.number().int().nonnegative(),
 })
 

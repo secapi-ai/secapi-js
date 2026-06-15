@@ -170,6 +170,23 @@ export const statementRowSchema = z.object({
   values: z.array(statementValueSchema),
 })
 
+export const compactStatementRowSchema = z.object({
+  key: z.string().nullable(),
+  label: z.string().nullable().optional(),
+  unit: z.string().nullable(),
+  values: z.array(z.number().nullable()),
+})
+
+export const compactStatementSchema = z.object({
+  ticker: z.string().nullable(),
+  statementKey: z.string().nullable(),
+  period: z.enum(["annual", "quarterly"]).nullable(),
+  periods: z.array(statementPeriodSchema),
+  rows: z.array(compactStatementRowSchema),
+  requestId: z.string().optional(),
+  traceparent: z.string().nullable().optional(),
+})
+
 export const statementSchema = z.object({
   object: z.literal("statement"),
   id: z.string(),
@@ -1586,6 +1603,15 @@ export const billingBudgetSchema = z.object({
   lineItems: z.array(billingBudgetLineItemSchema),
 })
 
+export const monthlyQuotaSnapshotSchema = z.object({
+  family: z.string(),
+  limit: z.number().int(),
+  used: z.number().int(),
+  remaining: z.number().int(),
+  resetAt: z.string(),
+  graceUntil: z.string().nullable(),
+})
+
 export const billingBudgetGateSchema = z.object({
   code: z.string(),
   status: z.number().int(),
@@ -1614,6 +1640,7 @@ export const billingAccountSchema = z.object({
   plans: z.array(billingPlanSchema),
   settlement: billingSettlementSchema,
   budget: billingBudgetSchema,
+  monthlyQuotas: z.record(z.string(), monthlyQuotaSnapshotSchema),
   requestId: z.string().optional(),
 })
 
@@ -1672,6 +1699,77 @@ export const dashboardPrincipalSchema = z.object({
   livemode: z.boolean(),
 }).passthrough()
 
+export const dashboardSettingsPrincipalSchema = z.object({
+  principalId: z.string(),
+  subject: z.string(),
+  orgId: z.string().nullable(),
+  authMode: z.string(),
+  scopes: z.array(z.string()),
+  livemode: z.boolean(),
+})
+
+export const dashboardOverviewSummarySchema = z.object({
+  object: z.literal("dashboard_overview_summary"),
+  recordedAt: z.string(),
+  privateBeta: z.object({
+    object: z.literal("dashboard_auth_gate_state"),
+    privateBetaEnabled: z.boolean(),
+    publicSignupEnabled: z.boolean(),
+    authkitConfigured: z.boolean(),
+    clientIdConfigured: z.boolean(),
+    workosConfigured: z.boolean(),
+    loginEnabled: z.boolean(),
+    signupEnabled: z.boolean(),
+  }),
+  capabilities: z.object({
+    authMode: z.string(),
+    canManageApiKeys: z.boolean(),
+    canCreateApiKeys: z.boolean(),
+    canManageBilling: z.boolean(),
+    acceptedApiKeyManagementScopes: z.array(z.string()),
+    acceptedBillingManagementScopes: z.array(z.string()),
+  }),
+  apiKeys: z.object({
+    activeCount: z.number().int(),
+    revokedCount: z.number().int(),
+    totalCount: z.number().int(),
+    activeKeyLimit: z.number().int(),
+    remainingCreateCount: z.number().int(),
+  }),
+  usage: z.object({
+    totalRequests: z.number().int(),
+    successCount: z.number().int(),
+    errorCount: z.number().int(),
+    errorRate: z.number(),
+    lastSeenAt: z.string().nullable(),
+    topMeters: usageSummarySchema.shape.meters,
+  }),
+  billing: z.object({
+    publicPlanKey: z.string(),
+    billingState: z.string(),
+    rightsKey: z.string(),
+    cardOnFile: z.boolean(),
+    cardRequired: z.boolean(),
+    freeGrant: z.object({
+      total: z.number().int(),
+      used: z.number().int(),
+      remaining: z.number().int(),
+    }),
+    monthlyQuotas: z.record(z.string(), monthlyQuotaSnapshotSchema),
+    budget: billingBudgetSchema,
+    settlementStatus: z.string(),
+    nextRecommendedPlan: z.string().nullable(),
+    subscriptionStatus: z.string().nullable(),
+    currentPeriodEnd: z.string().nullable(),
+  }),
+  actions: z.array(z.object({
+    id: z.string(),
+    label: z.string(),
+    enabled: z.boolean(),
+    reason: z.string().nullable(),
+  })),
+})
+
 export const dashboardOverviewSchema = z.object({
   object: z.literal("dashboard_overview"),
   requestId: z.string(),
@@ -1680,6 +1778,196 @@ export const dashboardOverviewSchema = z.object({
   billing: billingAccountSchema,
   usage: usageSummarySchema,
   apiKeys: z.array(apiKeySchema),
+  overview: dashboardOverviewSummarySchema,
+})
+
+export const dashboardAccountSettingsSchema = z.object({
+  object: z.literal("dashboard_account_settings"),
+  requestId: z.string(),
+  principal: dashboardSettingsPrincipalSchema.nullable(),
+  profile: z.object({
+    object: z.literal("dashboard_profile"),
+    userId: z.string().nullable(),
+    email: z.string().nullable(),
+    emailNormalized: z.string().nullable(),
+    name: z.string().nullable(),
+    displayName: z.string().nullable(),
+    displayNameSource: z.enum(["dashboard_settings", "workos", "unknown"]),
+    avatarUrl: z.string().nullable(),
+    editable: z.object({
+      displayName: z.boolean(),
+      email: z.boolean(),
+      name: z.boolean(),
+      avatarUrl: z.boolean(),
+    }),
+    updatedAt: z.string().nullable(),
+  }),
+  organization: z.object({
+    id: z.string(),
+    name: z.string().nullable(),
+    nameSource: z.enum(["dashboard_settings", "workos"]),
+    workosName: z.string().nullable(),
+    livemode: z.boolean(),
+    createdAt: z.string(),
+    settings: z.object({
+      organization: z.object({
+        displayName: z.string().nullable(),
+        updatedAt: z.string().nullable(),
+      }),
+      appearance: z.object({
+        theme: z.enum(["dark", "system"]),
+        density: z.enum(["comfortable", "compact"]),
+      }),
+      accountDeletionRequest: z.object({
+        status: z.enum(["not_requested", "requested"]),
+        requestedAt: z.string().nullable(),
+        requestedByPrincipalId: z.string().nullable(),
+        reason: z.string().nullable(),
+      }),
+    }),
+  }).nullable(),
+  membership: z.object({
+    object: z.literal("workos_org_membership"),
+    userId: z.string(),
+    orgId: z.string(),
+    status: z.enum(["active", "inactive", "suspended"]),
+    scopes: z.array(z.string()),
+    firstSeenAt: z.string(),
+    lastSeenAt: z.string(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  }).nullable(),
+  appearance: z.object({
+    theme: z.enum(["dark", "system"]),
+    density: z.enum(["comfortable", "compact"]),
+  }),
+  security: z.object({
+    object: z.literal("dashboard_security_settings"),
+    authProvider: z.literal("workos"),
+    authMode: z.string(),
+    sessionExpiresAt: z.string().nullable(),
+    scopes: z.array(z.string()),
+    logoutPath: z.string(),
+    profileFieldsManagedBy: z.literal("workos"),
+  }),
+  accountDeletion: z.object({
+    status: z.enum(["not_requested", "requested"]),
+    requestedAt: z.string().nullable(),
+    requestedByPrincipalId: z.string().nullable(),
+    reason: z.string().nullable(),
+  }),
+  actions: z.array(z.object({
+    id: z.string(),
+    method: z.string(),
+    path: z.string(),
+    enabled: z.boolean(),
+  })),
+})
+
+export const dashboardUsageSeriesSchema = z.object({
+  object: z.literal("dashboard_usage_series"),
+  requestId: z.string().optional(),
+  orgId: z.string(),
+  bucket: z.enum(["hour", "day"]),
+  since: z.string(),
+  until: z.string(),
+  data: z.array(z.object({
+    bucketStart: z.string(),
+    requestCount: z.number().int(),
+    successCount: z.number().int(),
+    errorCount: z.number().int(),
+    units: z.number().int(),
+    avgLatencyMs: z.number(),
+  })),
+})
+
+export const dashboardEndpointBreakdownSchema = z.object({
+  object: z.literal("dashboard_endpoint_breakdown"),
+  requestId: z.string().optional(),
+  orgId: z.string(),
+  since: z.string(),
+  until: z.string(),
+  data: z.array(z.object({
+    endpointKey: z.string(),
+    method: z.string(),
+    path: z.string(),
+    meterClass: z.string(),
+    meterFamily: z.string(),
+    requestCount: z.number().int(),
+    successCount: z.number().int(),
+    errorCount: z.number().int(),
+    units: z.number().int(),
+    avgLatencyMs: z.number(),
+    lastSeenAt: z.string().nullable(),
+  })),
+})
+
+export const dashboardUsageRequestSchema = z.object({
+  id: z.string(),
+  requestId: z.string(),
+  principalId: z.string().nullable(),
+  endpointKey: z.string(),
+  method: z.string(),
+  path: z.string(),
+  status: z.number().int(),
+  authMode: z.string().nullable(),
+  meterClass: z.string(),
+  meterFamily: z.string(),
+  mcpToolName: z.string().nullable(),
+  units: z.number().int(),
+  latencyMs: z.number(),
+  invoicePeriod: z.string(),
+  recordedAt: z.string(),
+})
+
+export const dashboardAuditEventSchema = z.object({
+  id: z.string(),
+  orgId: z.string().nullable(),
+  actorPrincipalId: z.string().nullable(),
+  eventType: z.string(),
+  category: z.string(),
+  outcome: z.enum(["started", "succeeded", "failed", "blocked"]),
+  requestId: z.string().nullable(),
+  authMode: z.string().nullable(),
+  source: z.string(),
+  metadata: z.record(z.string(), z.unknown()),
+  occurredAt: z.string(),
+})
+
+export const dashboardUsageRequestLogSchema = z.object({
+  object: z.literal("dashboard_usage_request_log"),
+  requestId: z.string(),
+  orgId: z.string(),
+  since: z.string(),
+  until: z.string(),
+  data: z.array(dashboardUsageRequestSchema),
+})
+
+export const dashboardUsageExportSchema = z.object({
+  object: z.literal("dashboard_usage_export"),
+  requestId: z.string(),
+  orgId: z.string(),
+  since: z.string(),
+  until: z.string(),
+  format: z.literal("json"),
+  data: z.array(dashboardUsageRequestSchema),
+})
+
+export const dashboardUsageActivitySchema = z.object({
+  object: z.literal("dashboard_usage_activity"),
+  requestId: z.string(),
+  orgId: z.string(),
+  since: z.string(),
+  until: z.string(),
+  totalRequests: z.number().int(),
+  successCount: z.number().int(),
+  errorCount: z.number().int(),
+  firstSeenAt: z.string().nullable(),
+  lastSeenAt: z.string().nullable(),
+  activePrincipalCount: z.number().int(),
+  endpointCount: z.number().int(),
+  recentRequests: z.array(dashboardUsageRequestSchema),
+  recentAuditEvents: z.array(dashboardAuditEventSchema),
 })
 
 export const installPayloadSchema = z.object({
@@ -1864,6 +2152,8 @@ export const listSchema = <T extends z.ZodTypeAny>(itemSchema: T) =>
     data: z.array(itemSchema),
     hasMore: z.boolean(),
     nextCursor: z.string().nullable(),
+    responseMode: z.enum(["compact", "standard", "verbose"]).nullable().optional(),
+    include: z.array(z.string()).nullable().optional(),
     requestId: z.string(),
   })
 
@@ -1929,6 +2219,7 @@ export const statementAgentRecordSchema = statementSchema
   .pick({
     object: true,
     ticker: true,
+    companyName: true,
     statementKey: true,
     title: true,
     period: true,
@@ -1936,6 +2227,12 @@ export const statementAgentRecordSchema = statementSchema
     rows: true,
   })
   .extend({
+    sources: z.array(z.object({
+      source: z.string(),
+      sourceKind: z.enum(["company_facts", "filing"]),
+      accessionNumber: z.string().nullable(),
+      sourceUrl: z.string().url(),
+    })).default([]),
     requestId: z.string(),
   })
 
@@ -2114,6 +2411,7 @@ export const ownershipReportAgentRecordSchema = ownershipReportSchema
     managerName: true,
     form: true,
     filingDate: true,
+    reportDate: true,
     accessionNumber: true,
   })
   .extend({
@@ -2286,6 +2584,7 @@ export type Filing = z.infer<typeof filingSchema>
 export type Section = z.infer<typeof sectionSchema>
 export type FactPoint = z.infer<typeof factPointSchema>
 export type Statement = z.infer<typeof statementSchema>
+export type CompactStatement = z.infer<typeof compactStatementSchema>
 export type ResponseView = z.infer<typeof responseViewSchema>
 export type FilingAgentRecord = z.infer<typeof filingAgentRecordSchema>
 export type EntityAgentRecord = z.infer<typeof entityAgentRecordSchema>
@@ -2359,6 +2658,14 @@ export type BillingBudget = z.infer<typeof billingBudgetSchema>
 export type BillingQuote = z.infer<typeof billingQuoteSchema>
 export type BillingBudgetUpdate = z.infer<typeof billingBudgetUpdateSchema>
 export type DashboardOverview = z.infer<typeof dashboardOverviewSchema>
+export type DashboardAccountSettings = z.infer<typeof dashboardAccountSettingsSchema>
+export type DashboardUsageSeries = z.infer<typeof dashboardUsageSeriesSchema>
+export type DashboardEndpointBreakdown = z.infer<typeof dashboardEndpointBreakdownSchema>
+export type DashboardUsageRequest = z.infer<typeof dashboardUsageRequestSchema>
+export type DashboardAuditEvent = z.infer<typeof dashboardAuditEventSchema>
+export type DashboardUsageRequestLog = z.infer<typeof dashboardUsageRequestLogSchema>
+export type DashboardUsageExport = z.infer<typeof dashboardUsageExportSchema>
+export type DashboardUsageActivity = z.infer<typeof dashboardUsageActivitySchema>
 export type AgentBootstrapToken = z.infer<typeof agentBootstrapTokenSchema>
 export type AgentBootstrap = z.infer<typeof agentBootstrapSchema>
 export type WebhookEndpoint = z.infer<typeof webhookEndpointSchema>

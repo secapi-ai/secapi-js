@@ -153,10 +153,15 @@ function createFootnoteInvestorMetadataShape() {
 }
 
 const investorMetadataShape = {
-  provenance: provenanceSchema,
+  responseMode: z.enum(["compact", "standard", "verbose"]).optional(),
+  dataAsOf: z.string().optional(),
+  freshnessStatus: z.string().optional(),
+  methodologyVersion: z.string().optional(),
+  materializationVersion: z.string().optional(),
+  provenance: provenanceSchema.optional(),
   freshness: freshnessMetadataSchema.optional(),
   materialization: materializationMetadataSchema.optional(),
-  sourceRights: sourceRightsMetadataSchema,
+  sourceRights: sourceRightsMetadataSchema.optional(),
   methodology: methodologyMetadataSchema.optional(),
   revision: revisionMetadataSchema.optional(),
   degradedState: degradedStateSchema.nullable().optional(),
@@ -328,16 +333,57 @@ export const macroForecastSchema = z.object({
   ...investorMetadataShape,
 })
 
+export const factorQualityProofSourceMetadataSchema = z.object({
+  latestAsOf: z.string().nullable(),
+  latestSourcePublishedAt: z.string().nullable(),
+  observedModelNameCount: z.number().int().nonnegative(),
+  observedModelNamesSample: z.array(z.string()).default([]),
+  nonStockBasketRowCount: z.number().int().nonnegative(),
+  metadataModelNames: z.array(z.string()).default([]),
+  metadataModelVersions: z.array(z.string()).default([]),
+  metadataMethodologyUrls: z.array(z.string()).default([]),
+})
+
+export const factorQualityProofSchema = z.object({
+  object: z.literal("factor_quality_proof"),
+  status: z.enum(["ready", "degraded", "not_available"]),
+  proofSource: z.string().nullable(),
+  proofObservedAt: z.string().nullable(),
+  rowLevelProofAvailable: z.boolean(),
+  proofReady: z.boolean(),
+  firstDate: z.string().nullable(),
+  lastDate: z.string().nullable(),
+  firstRequiredMarketDate: z.string().nullable(),
+  latestMarketDay: z.string().nullable(),
+  targetHistoryStartDate: z.string().nullable(),
+  requiredHistoryStartDate: z.string().nullable(),
+  shortHistoryExempt: z.boolean(),
+  historyStartMarketDayLag: z.number().int().nullable(),
+  latestMarketDayLag: z.number().int().nullable(),
+  rowCount: z.number().int().nonnegative().nullable(),
+  distinctFactorDateCount: z.number().int().nonnegative().nullable(),
+  coveredMarketDateCount: z.number().int().nonnegative().nullable(),
+  expectedMarketDateCount: z.number().int().nonnegative().nullable(),
+  missingSessionCount: z.number().int().nonnegative().nullable(),
+  coveragePct: z.number().min(0).max(1).nullable(),
+  methodologyVersion: z.string().nullable(),
+  modelName: z.string().nullable(),
+  methodologyUrl: z.string().nullable(),
+  sourceMetadata: factorQualityProofSourceMetadataSchema.nullable(),
+  degradedReasons: z.array(z.string()).default([]),
+})
+
 export const factorDefinitionSchema = z.object({
   object: z.literal("factor_definition"),
   id: z.string(),
   key: z.string(),
   name: z.string(),
-  category: z.enum(["market", "style", "macro", "sector", "industry", "country", "custom"]),
+  category: z.enum(["market", "style", "macro", "sector", "industry", "country", "thematic"]),
   description: z.string(),
   benchmarkSymbol: z.string().nullable().optional(),
   equation: z.record(z.string(), z.number()).optional(),
   orthogonalizedAgainst: z.array(z.string()).default([]),
+  qualityProof: factorQualityProofSchema,
   ...investorMetadataShape,
 })
 
@@ -352,6 +398,221 @@ export const factorReturnSchema = z.object({
   scaledReturn: z.number().nullable().optional(),
   zScore: z.number().nullable().optional(),
   leverage: z.number().nullable().optional(),
+  qualityProof: factorQualityProofSchema,
+  ...investorMetadataShape,
+})
+
+export const factorExtremeMoveSchema = z.object({
+  object: z.literal("factor_extreme_move"),
+  id: z.string(),
+  rank: z.number().int().positive(),
+  factorKey: z.string(),
+  factorName: z.string(),
+  category: z.string(),
+  window: z.string(),
+  lookback: z.string(),
+  direction: z.enum(["up", "down", "flat"]),
+  sort: z.enum(["abs_z_score", "abs_scaled_return"]),
+  score: z.number(),
+  absZScore: z.number().nonnegative(),
+  absScaledReturn: z.number().nonnegative(),
+  minAbsZScore: z.number().nonnegative(),
+  isExtreme: z.boolean(),
+  asOf: z.string(),
+  rawReturn: z.number().nullable().optional(),
+  pureReturn: z.number().nullable().optional(),
+  scaledReturn: z.number().nullable().optional(),
+  zScore: z.number().nullable().optional(),
+  leverage: z.number().nullable().optional(),
+  ...investorMetadataShape,
+})
+
+export const factorExtremePairSchema = z.object({
+  object: z.literal("factor_extreme_pair"),
+  id: z.string(),
+  rank: z.number().int().positive(),
+  factor1: z.string(),
+  factor2: z.string(),
+  factor1Name: z.string(),
+  factor2Name: z.string(),
+  category1: z.string(),
+  category2: z.string(),
+  window: z.enum(["1d", "5d", "10d", "21d", "63d", "126d", "252d"]),
+  lookback: z.string(),
+  direction: z.enum(["factor1", "factor2", "flat"]),
+  sort: z.enum(["abs_z_score", "abs_spread_return"]),
+  score: z.number(),
+  absZScore: z.number().nonnegative(),
+  absSpreadReturn: z.number().nonnegative(),
+  minAbsZScore: z.number().nonnegative(),
+  isExtreme: z.boolean(),
+  spreadReturn: z.number(),
+  factor1Return: z.number(),
+  factor2Return: z.number(),
+  averageSpreadReturn: z.number(),
+  spreadVolatility: z.number().nonnegative(),
+  zScore: z.number(),
+  spreadZScore: z.number(),
+  meanReversionSignal: z.enum(["factor1_overextended", "factor2_overextended", "neutral"]),
+  meanReversionSummary: z.string(),
+  windowStartDate: z.string(),
+  windowEndDate: z.string(),
+  pairHistory: z.record(z.string(), z.unknown()),
+  observationCount: z.number().int().nonnegative(),
+  rollingObservationCount: z.number().int().nonnegative(),
+  asOf: z.string(),
+  ...investorMetadataShape,
+})
+
+export const factorValuationSchema = z.object({
+  object: z.literal("factor_valuation"),
+  id: z.string(),
+  rank: z.number().int().positive(),
+  factorKey: z.string(),
+  factorName: z.string(),
+  category: z.string(),
+  valuationMetric: z.string(),
+  longLeg: z.string(),
+  shortLeg: z.string(),
+  window: z.string(),
+  lookback: z.string(),
+  signal: z.enum(["tailwind", "headwind", "neutral"]),
+  signalDirection: z.enum(["tailwind", "headwind", "neutral"]),
+  weightingMode: z.enum(["long_short_equal", "long_leg_focus", "short_leg_focus"]),
+  legWeights: z.object({
+    long: z.number(),
+    short: z.number(),
+  }),
+  rawFactorZScore: z.number(),
+  weightedZScore: z.number(),
+  sort: z.enum(["opportunity_score", "abs_z_score", "factor_key"]),
+  score: z.number(),
+  opportunityScore: z.number(),
+  zScore: z.number(),
+  absZScore: z.number().nonnegative(),
+  scaledReturn: z.number().nullable().optional(),
+  pureReturn: z.number().nullable().optional(),
+  rawReturn: z.number().nullable().optional(),
+  asOf: z.string(),
+  signalSource: z.literal("materialized_factor_return_z_score"),
+  stockDrilldown: z.record(z.string(), z.unknown()),
+  opportunitySummary: z.string(),
+  ...investorMetadataShape,
+})
+
+export const factorValuationStockSchema = z.object({
+  object: z.literal("factor_valuation_stock"),
+  id: z.string(),
+  rank: z.number().int().positive(),
+  symbol: symbolSchema,
+  factorKey: z.string(),
+  factorName: z.string(),
+  category: z.string(),
+  valuationMetric: z.string(),
+  valuationSignal: z.enum(["tailwind", "headwind", "neutral"]),
+  signalDirection: z.enum(["tailwind", "headwind", "neutral"]),
+  weightingMode: z.enum(["long_short_equal", "long_leg_focus", "short_leg_focus"]),
+  legWeights: z.object({
+    long: z.number(),
+    short: z.number(),
+  }),
+  stance: z.enum(["beneficiaries", "at_risk", "both"]),
+  impact: z.enum(["beneficiary", "at_risk", "neutral"]),
+  sort: z.enum(["score", "abs_beta", "symbol"]),
+  score: z.number(),
+  expectedFactorImpactScore: z.number(),
+  factorZScore: z.number(),
+  rawFactorZScore: z.number(),
+  weightedFactorZScore: z.number(),
+  exposureAdjustedFactorZScore: z.number(),
+  exposureBeta: z.number(),
+  absExposureBeta: z.number().nonnegative(),
+  exposurePercentile: z.number().nullable().optional(),
+  exposureConfidence: z.enum(["high", "medium", "low"]).nullable().optional(),
+  nActiveFactors: z.number().int().nonnegative(),
+  window: z.string(),
+  lookback: z.string(),
+  modelName: z.string(),
+  asOf: z.string(),
+  factorAsOf: z.string(),
+  factorFreshness: freshnessMetadataSchema.optional(),
+  factorMaterialization: materializationMetadataSchema.optional(),
+  signalSource: z.literal("materialized_factor_return_z_score_plus_latest_factor_exposure"),
+  rankingRationale: z.string(),
+  opportunitySummary: z.string(),
+  ...investorMetadataShape,
+})
+
+export const factorHistoryPointSchema = z.object({
+  date: z.string(),
+  rawReturn: z.number().nullable().optional(),
+  pureReturn: z.number().nullable().optional(),
+  scaledReturn: z.number().nullable().optional(),
+  zScore: z.number().nullable().optional(),
+  leverage: z.number().nullable().optional(),
+})
+
+export const factorHistoryWindowSchema = z.object({
+  window: z.string(),
+  rawReturn: z.number().nullable().optional(),
+  pureReturn: z.number().nullable().optional(),
+  scaledReturn: z.number().nullable().optional(),
+  observationCount: z.number().int().nonnegative(),
+  startDate: z.string().nullable().optional(),
+  endDate: z.string().nullable().optional(),
+})
+
+export const factorHistorySchema = z.object({
+  object: z.literal("factor_history"),
+  id: z.string(),
+  factorKey: z.string(),
+  factorName: z.string(),
+  category: z.string(),
+  range: z.string(),
+  dateFrom: z.string(),
+  dateTo: z.string(),
+  historyStartDate: z.string().nullable().optional(),
+  historyEndDate: z.string().nullable().optional(),
+  observationCount: z.number().int().nonnegative(),
+  asOf: z.string(),
+  series: z.array(factorHistoryPointSchema).default([]),
+  seriesCount: z.number().int().nonnegative().optional(),
+  seriesSample: z.array(factorHistoryPointSchema).optional(),
+  expansionHints: z.array(z.string()).optional(),
+  summaryWindows: z.array(factorHistoryWindowSchema).default([]),
+  qualityProof: factorQualityProofSchema,
+  ...investorMetadataShape,
+})
+
+export const factorSparklinePointSchema = z.object({
+  date: z.string(),
+  value: z.number(),
+})
+
+export const factorSparklineSchema = z.object({
+  object: z.literal("factor_sparkline"),
+  id: z.string(),
+  factorKey: z.string(),
+  factorName: z.string(),
+  category: z.string(),
+  range: z.string(),
+  metric: z.enum(["scaled_return", "pure_return", "raw_return", "z_score"]),
+  dateFrom: z.string(),
+  dateTo: z.string(),
+  historyStartDate: z.string().nullable().optional(),
+  historyEndDate: z.string().nullable().optional(),
+  observationCount: z.number().int().nonnegative(),
+  pointCount: z.number().int().nonnegative(),
+  asOf: z.string(),
+  latestValue: z.number().nullable().optional(),
+  latestRawReturn: z.number().nullable().optional(),
+  latestPureReturn: z.number().nullable().optional(),
+  latestScaledReturn: z.number().nullable().optional(),
+  latestZScore: z.number().nullable().optional(),
+  latestLeverage: z.number().nullable().optional(),
+  summaryWindows: z.array(factorHistoryWindowSchema).default([]),
+  points: z.array(factorSparklinePointSchema).default([]),
+  qualityProof: factorQualityProofSchema,
   ...investorMetadataShape,
 })
 
@@ -381,7 +642,7 @@ export const factorRegimePerformanceSchema = z.object({
   regimeLabel: z.string(),
   factorKey: z.string(),
   factorName: z.string(),
-  factorCategory: z.enum(["market", "style", "macro", "sector", "industry", "country", "custom"]),
+  factorCategory: z.enum(["market", "style", "macro", "sector", "industry", "country", "thematic"]),
   window: z.string(),
   lookback: z.string(),
   rank: z.number().int().positive(),
@@ -623,17 +884,161 @@ export const countryReportRequestSchema = z.object({
 export const portfolioIntelligenceRequestSchema = z.object({
   country: z.string().min(2).max(12).default("US"),
   lookback: z.string().min(2).max(12).optional(),
+  category: z.string().min(2).max(32).optional(),
+  keys: z.array(z.string()).default([]),
+  holdings: z.array(portfolioHoldingInputSchema).min(1).max(250),
+  benchmarkLabel: z.string().min(1).max(160).optional(),
+  benchmarkHoldings: z.array(portfolioHoldingInputSchema).min(1).max(250).optional(),
+  whatIfLabel: z.string().min(1).max(160).optional(),
+  whatIfHoldings: z.array(portfolioHoldingInputSchema).min(1).max(250).optional(),
+})
+
+export const portfolioAttributionRequestSchema = z.object({
+  country: z.string().min(2).max(12).default("US"),
+  lookback: z.string().min(2).max(12).optional(),
+  window: z.string().min(2).max(12).optional(),
+  frequency: z.enum(["daily", "weekly", "monthly", "quarterly", "annual"]).default("daily"),
+  exportFormat: z.enum(["json", "csv", "both"]).default("json"),
+  category: z.string().min(2).max(32).optional(),
   keys: z.array(z.string()).default([]),
   holdings: z.array(portfolioHoldingInputSchema).min(1).max(250),
 })
+
+export const portfolioHedgeInstrumentTypeSchema = z.enum(["equity", "etf", "future", "option", "cash"])
+
+export const portfolioHedgeConstraintsSchema = z.object({
+  maxHedges: z.number().int().min(1).max(5).default(3),
+  maxPositionWeight: z.number().min(0.001).max(1).default(0.1),
+  maxTotalHedgeWeight: z.number().min(0.001).max(1).default(0.3),
+  maxSectorWeight: z.number().min(0.001).max(1).default(1),
+  hedgeIntensity: z.number().min(0.05).max(1).default(1),
+  longOnly: z.boolean().default(false),
+  allowedInstrumentTypes: z.array(portfolioHedgeInstrumentTypeSchema).min(1).default(["etf"]),
+  customUniverse: z.array(symbolSchema).max(250).default([]),
+  targetExposures: z.record(z.string(), z.number()).default({}),
+  minConfidence: z.enum(["low", "medium", "high"]).default("medium"),
+  minLiquidityUsd: z.number().min(0).default(0),
+  excludedSectors: z.array(z.string()).max(64).default([]),
+}).strict().default({
+  maxHedges: 3,
+  maxPositionWeight: 0.1,
+  maxTotalHedgeWeight: 0.3,
+  maxSectorWeight: 1,
+  hedgeIntensity: 1,
+  longOnly: false,
+  allowedInstrumentTypes: ["etf"],
+  customUniverse: [],
+  targetExposures: {},
+  minConfidence: "medium",
+  minLiquidityUsd: 0,
+  excludedSectors: [],
+})
+
+export const portfolioOptimizerConstraintsSchema = z.object({
+  maxCandidates: z.number().int().min(1).max(8).default(3),
+  maxIterations: z.number().int().min(10).max(250).default(50),
+  maxRuntimeMs: z.number().int().min(50).max(2500).default(750),
+  maxPositionWeight: z.number().min(0.001).max(1).default(0.35),
+  minPositionWeight: z.number().min(0).max(0.5).default(0),
+  longOnly: z.boolean().default(true),
+  turnoverLimit: z.number().min(0).max(2).default(0.25),
+  riskFreeRate: z.number().min(-0.25).max(0.25).default(0),
+}).strict().default({
+  maxCandidates: 3,
+  maxIterations: 50,
+  maxRuntimeMs: 750,
+  maxPositionWeight: 0.35,
+  minPositionWeight: 0,
+  longOnly: true,
+  turnoverLimit: 0.25,
+  riskFreeRate: 0,
+})
+
+export const portfolioOptimizeRequestSchema = z.object({
+  country: z.string().min(2).max(12).default("US"),
+  lookback: z.string().min(2).max(12).optional(),
+  category: z.string().min(2).max(32).optional(),
+  keys: z.array(z.string()).default([]),
+  objective: z.enum(["factor_neutral", "min_drawdown", "regime_aware"]).default("factor_neutral"),
+  maxHedges: z.number().int().min(1).max(5).optional(),
+  constraints: portfolioOptimizerConstraintsSchema.optional(),
+  holdings: z.array(portfolioHoldingInputSchema).min(1).max(250),
+}).strict()
+
+export const portfolioHedgeRequestSchema = z.object({
+  country: z.string().min(2).max(12).default("US"),
+  lookback: z.string().min(2).max(12).optional(),
+  category: z.string().min(2).max(32).optional(),
+  keys: z.array(z.string()).default([]),
+  objective: z.enum(["factor_neutral", "min_drawdown", "regime_aware"]).default("factor_neutral"),
+  mode: z.enum(["compact", "standard"]).default("compact"),
+  constraints: portfolioHedgeConstraintsSchema,
+  holdings: z.array(portfolioHoldingInputSchema).min(1).max(250),
+}).strict()
 
 export const portfolioStressTestRequestSchema = z.object({
   country: z.string().min(2).max(12).default("US"),
   lookback: z.string().min(2).max(12).optional(),
   category: z.string().min(2).max(32).optional(),
+  keys: z.array(z.string()).default([]),
   scenarioKey: z.enum(["us_recession", "higher_for_longer", "china_growth_scare"]).optional(),
   holdings: z.array(portfolioHoldingInputSchema).min(1).max(250),
 })
+
+export const modelFactorAnalysisModelInputSchema = z.object({
+  id: z.string().min(1).max(120).optional(),
+  label: z.string().min(1).max(160).default("Ad hoc model"),
+  description: z.string().max(500).default("Ad hoc model submitted for factor analysis."),
+  tags: z.array(z.string().min(1).max(64)).max(20).default([]),
+  source: z.enum(["turos", "client", "model_builder"]).default("client"),
+}).strict().default({
+  label: "Ad hoc model",
+  description: "Ad hoc model submitted for factor analysis.",
+  tags: [],
+  source: "client",
+})
+
+export const modelFactorAnalysisIncludeSchema = z.object({
+  attribution: z.boolean().default(true),
+  hedge: z.boolean().default(false),
+  optimizer: z.boolean().default(false),
+  positionViews: z.boolean().default(true),
+}).strict().default({
+  attribution: true,
+  hedge: false,
+  optimizer: false,
+  positionViews: true,
+})
+
+export const modelFactorAnalysisHedgeOptionsSchema = z.object({
+  objective: z.enum(["factor_neutral", "min_drawdown", "regime_aware"]).default("factor_neutral"),
+  mode: z.enum(["compact", "standard"]).default("compact"),
+  constraints: portfolioHedgeConstraintsSchema,
+}).strict().default({
+  objective: "factor_neutral",
+  mode: "compact",
+  constraints: portfolioHedgeConstraintsSchema.parse(undefined),
+})
+
+export const modelFactorAnalysisOptimizerOptionsSchema = z.object({
+  objective: z.enum(["factor_neutral", "min_drawdown", "regime_aware"]).default("factor_neutral"),
+  constraints: portfolioOptimizerConstraintsSchema.optional(),
+}).strict().default({
+  objective: "factor_neutral",
+})
+
+export const modelFactorAnalysisRequestSchema = z.object({
+  model: modelFactorAnalysisModelInputSchema,
+  country: z.string().min(2).max(12).default("US"),
+  lookback: z.string().min(2).max(12).optional(),
+  window: z.string().min(2).max(12).optional(),
+  category: z.string().min(2).max(32).optional(),
+  keys: z.array(z.string()).default([]),
+  include: modelFactorAnalysisIncludeSchema,
+  hedge: modelFactorAnalysisHedgeOptionsSchema,
+  optimizer: modelFactorAnalysisOptimizerOptionsSchema,
+  holdings: z.array(portfolioHoldingInputSchema).min(1).max(250),
+}).strict()
 
 export const watchlistIntelligenceRequestSchema = z.object({
   country: z.string().min(2).max(12).default("US"),
@@ -688,16 +1093,239 @@ export const earningsPreviewBundleSchema = z.object({
   ...investorMetadataShape,
 })
 
+export const portfolioFitSummarySchema = z.object({
+  object: z.literal("portfolio_fit_summary"),
+  exposureCount: z.number().int().nonnegative(),
+  activeFactorCount: z.number().int().nonnegative(),
+  averageRSquared: z.number().min(0).max(1).nullable(),
+  averageAdjustedRSquared: z.number().nullable(),
+  idiosyncraticRiskScore: z.number().min(0).max(1).nullable(),
+  rSquaredMethod: z.literal("unweighted_average_of_factor_exposure_r_squared"),
+  idiosyncraticRiskMethod: z.literal("one_minus_average_factor_exposure_r_squared_proxy"),
+  observationCount: z.number().int().nonnegative().nullable(),
+  interpretation: z.string(),
+})
+
+export const portfolioBenchmarkTiltSchema = z.object({
+  object: z.literal("portfolio_benchmark_tilt"),
+  factorKey: z.string(),
+  portfolioBeta: z.number(),
+  benchmarkBeta: z.number(),
+  activeTilt: z.number(),
+  direction: z.enum(["overweight", "underweight", "neutral"]),
+  summary: z.string(),
+})
+
+export const portfolioWhatIfComparisonSchema = z.object({
+  object: z.literal("portfolio_what_if_comparison"),
+  label: z.string(),
+  holdings: z.array(portfolioHoldingInputSchema),
+  exposureDeltas: z.array(portfolioBenchmarkTiltSchema).default([]),
+  summaryMd: z.string(),
+})
+
+export const portfolioOptimizerCandidateSchema = z.object({
+  object: z.literal("portfolio_optimizer_candidate"),
+  rank: z.number().int().positive(),
+  name: z.string(),
+  objective: z.enum(["current_reference", "factor_neutral", "min_drawdown", "regime_aware"]),
+  holdings: z.array(portfolioHoldingInputSchema),
+  expectedReturn: z.number(),
+  expectedVolatility: z.number(),
+  expectedSharpe: z.number(),
+  maxDrawdownProxy: z.number(),
+  factorExposureScore: z.number(),
+  turnover: z.number(),
+  score: z.number(),
+  constraintStatus: z.enum(["ok", "capped", "rejected"]),
+  constraintsApplied: z.array(z.string()).default([]),
+  rationale: z.string(),
+})
+
+export const portfolioOptimizerCandidateSummarySchema = portfolioOptimizerCandidateSchema.omit({
+  holdings: true,
+})
+
+export const portfolioOptimizerRuntimeSchema = z.object({
+  object: z.literal("portfolio_optimizer_runtime"),
+  method: z.literal("bounded_deterministic_candidate_search"),
+  candidateCount: z.number().int().nonnegative(),
+  iterationBudget: z.number().int().positive(),
+  iterationsRun: z.number().int().nonnegative(),
+  runtimeMs: z.number(),
+  maxRuntimeMs: z.number().int().positive(),
+  timeout: z.boolean(),
+})
+
 export const portfolioAnalysisSchema = z.object({
   object: z.literal("portfolio_analysis"),
   id: z.string(),
   asOf: z.string(),
   holdings: z.array(portfolioHoldingInputSchema),
   exposures: z.array(factorExposureSchema).default([]),
+  fit: portfolioFitSummarySchema.nullable().default(null),
+  benchmarkLabel: z.string().nullable().default(null),
+  benchmarkTilts: z.array(portfolioBenchmarkTiltSchema).default([]),
+  whatIfComparison: portfolioWhatIfComparisonSchema.nullable().default(null),
   positionViews: z.array(z.lazy(() => portfolioPositionFactorViewSchema)).default([]),
   positionExposures: z.array(factorExposureSchema).default([]),
   attribution: z.array(attributionContributionSchema).default([]),
   hedgeSuggestions: z.array(hedgeCandidateSchema).default([]),
+  optimizationNotes: z.array(z.string()).default([]),
+  factorNeutralPlan: z.array(z.string()).default([]),
+  optimizerObjective: z.enum(["factor_neutral", "min_drawdown", "regime_aware"]).optional(),
+  optimizerConstraints: portfolioOptimizerConstraintsSchema.optional(),
+  optimizerRuntime: portfolioOptimizerRuntimeSchema.optional(),
+  optimizerCandidates: z.array(portfolioOptimizerCandidateSchema).default([]).optional(),
+  optimizerCandidateCount: z.number().int().nonnegative().optional(),
+  optimizerCandidateSample: z.array(portfolioOptimizerCandidateSummarySchema).default([]).optional(),
+  selectedCandidate: z.union([portfolioOptimizerCandidateSchema, portfolioOptimizerCandidateSummarySchema]).nullable().optional(),
+  optimizerDisclosures: z.array(z.string()).default([]).optional(),
+  summaryMd: z.string(),
+  ...investorMetadataShape,
+})
+
+export const portfolioFactorAttributionSchema = z.object({
+  object: z.literal("portfolio_factor_attribution"),
+  rank: z.number().int().positive(),
+  factorKey: z.string(),
+  factorName: z.string(),
+  factorCategory: z.string(),
+  contributionPercent: z.number(),
+  contributionPct: z.number().nullable(),
+  beta: z.number(),
+  factorReturn: z.number(),
+  rawReturn: z.number().nullable().optional(),
+  pureReturn: z.number().nullable().optional(),
+  scaledReturn: z.number().nullable().optional(),
+  zScore: z.number().nullable().optional(),
+  leverage: z.number().nullable().optional(),
+  modelName: z.string().nullable().optional(),
+  explanation: z.string(),
+  trace: traceReferenceSchema.nullable().optional(),
+})
+
+export const portfolioReturnPointSchema = z.object({
+  object: z.literal("portfolio_return_point"),
+  period: z.string(),
+  periodEnd: z.string(),
+  frequency: z.enum(["daily", "weekly", "monthly", "quarterly", "annual"]),
+  periodReturn: z.number(),
+  cumulativeReturn: z.number(),
+  coverageWeight: z.number().min(0),
+  missingSymbols: z.array(z.string()).default([]),
+})
+
+export const portfolioRollingBetaSchema = z.object({
+  object: z.literal("portfolio_rolling_beta"),
+  factorKey: z.string(),
+  factorName: z.string(),
+  factorCategory: z.string(),
+  beta: z.number(),
+  lookback: z.string(),
+  windowStart: z.string().nullable(),
+  windowEnd: z.string(),
+  rSquared: z.number().nullable(),
+  adjustedRSquared: z.number().nullable(),
+  observationCount: z.number().int().nonnegative().nullable(),
+  method: z.literal("materialized_factor_exposure_regression_beta"),
+})
+
+export const portfolioAttributionExportFileSchema = z.object({
+  name: z.string(),
+  kind: z.enum(["contributions", "return_stream", "rolling_betas"]),
+  format: z.literal("csv"),
+  columns: z.array(z.string()).default([]),
+  csv: z.string(),
+})
+
+export const portfolioAttributionExportSchema = z.object({
+  object: z.literal("portfolio_attribution_export"),
+  requestedFormat: z.enum(["json", "csv", "both"]),
+  formats: z.array(z.enum(["json", "csv"])).default(["json"]),
+  fileName: z.string(),
+  columns: z.array(z.string()).default([]),
+  csv: z.string().nullable().default(null),
+  files: z.array(portfolioAttributionExportFileSchema).default([]),
+})
+
+export const portfolioAttributionSchema = z.object({
+  object: z.literal("portfolio_attribution"),
+  id: z.string(),
+  analysisId: z.string(),
+  asOf: z.string(),
+  country: z.string(),
+  window: z.string(),
+  lookback: z.string(),
+  frequency: z.enum(["daily", "weekly", "monthly", "quarterly", "annual"]),
+  holdings: z.array(portfolioHoldingInputSchema),
+  portfolioReturn: z.number().nullable(),
+  totalExplained: z.number(),
+  alpha: z.number().nullable(),
+  rSquared: z.number().nullable(),
+  contributions: z.array(portfolioFactorAttributionSchema).default([]),
+  returnStream: z.array(portfolioReturnPointSchema).default([]),
+  returnPointCount: z.number().int().nonnegative().optional(),
+  returnStreamSample: z.array(portfolioReturnPointSchema).default([]).optional(),
+  rollingBetas: z.array(portfolioRollingBetaSchema).default([]),
+  rollingBetaCount: z.number().int().nonnegative().optional(),
+  rollingBetasUnavailableReason: z.string().nullable().default(null),
+  exposures: z.array(factorExposureSchema).default([]),
+  export: portfolioAttributionExportSchema,
+  summaryMd: z.string(),
+  ...investorMetadataShape,
+})
+
+export const portfolioHedgeTargetExposureSchema = z.object({
+  object: z.literal("portfolio_hedge_target_exposure"),
+  factorKey: z.string(),
+  factorName: z.string(),
+  factorCategory: z.string(),
+  beta: z.number(),
+  targetExposureDelta: z.number(),
+  proposedExposureDelta: z.number(),
+  residualBeta: z.number(),
+  hedged: z.boolean(),
+  skipReason: z.string().nullable(),
+})
+
+export const portfolioHedgeCandidateSchema = z.object({
+  object: z.literal("portfolio_hedge_candidate"),
+  rank: z.number().int().positive(),
+  factorKey: z.string(),
+  factorName: z.string(),
+  factorCategory: z.string(),
+  symbol: symbolSchema,
+  instrumentType: portfolioHedgeInstrumentTypeSchema,
+  action: z.enum(["long", "short"]),
+  recommendedWeight: z.number(),
+  targetExposureDelta: z.number(),
+  expectedExposureDelta: z.record(z.string(), z.number()).default({}),
+  residualBeta: z.number(),
+  constraintStatus: z.enum(["ok", "capped"]),
+  constraintsApplied: z.array(z.string()).default([]),
+  liquidityUsd: z.number().nullable(),
+  estimatedCostBps: z.number().nullable(),
+  sectorKey: z.string().nullable(),
+  rationale: z.string(),
+  confidence: z.enum(["high", "medium", "low"]),
+})
+
+export const portfolioHedgeSchema = z.object({
+  object: z.literal("portfolio_hedge"),
+  id: z.string(),
+  analysisId: z.string().nullable(),
+  asOf: z.string(),
+  country: z.string(),
+  lookback: z.string(),
+  objective: z.enum(["factor_neutral", "min_drawdown", "regime_aware"]),
+  mode: z.enum(["compact", "standard"]),
+  constraints: portfolioHedgeConstraintsSchema,
+  holdings: z.array(portfolioHoldingInputSchema),
+  targetExposures: z.array(portfolioHedgeTargetExposureSchema).default([]),
+  hedges: z.array(portfolioHedgeCandidateSchema).default([]),
+  residualExposure: z.record(z.string(), z.number()).default({}),
+  exposures: z.array(factorExposureSchema).default([]),
   optimizationNotes: z.array(z.string()).default([]),
   factorNeutralPlan: z.array(z.string()).default([]),
   summaryMd: z.string(),
@@ -749,6 +1377,41 @@ export const modelPortfolioFactorViewSchema = z.object({
   analysis: portfolioAnalysisSchema,
   positionViews: z.array(portfolioPositionFactorViewSchema).default([]),
   positionExposures: z.array(factorExposureSchema).default([]),
+  ...investorMetadataShape,
+})
+
+export const modelFactorAnalysisSchema = z.object({
+  object: z.literal("model_factor_analysis"),
+  id: z.string(),
+  asOf: z.string(),
+  model: z.object({
+    id: z.string(),
+    label: z.string(),
+    description: z.string(),
+    tags: z.array(z.string()).default([]),
+    source: z.enum(["turos", "client", "model_builder"]),
+  }),
+  country: z.string(),
+  lookback: z.string(),
+  window: z.string(),
+  category: z.string(),
+  holdings: z.array(portfolioHoldingInputSchema),
+  include: modelFactorAnalysisIncludeSchema,
+  analysis: portfolioAnalysisSchema,
+  attribution: portfolioAttributionSchema.nullable(),
+  hedge: portfolioHedgeSchema.nullable(),
+  optimizerObjective: z.enum(["factor_neutral", "min_drawdown", "regime_aware"]).optional(),
+  optimizerConstraints: portfolioOptimizerConstraintsSchema.optional(),
+  optimizerRuntime: portfolioOptimizerRuntimeSchema.optional(),
+  optimizerCandidates: z.array(portfolioOptimizerCandidateSchema).default([]).optional(),
+  optimizerCandidateCount: z.number().int().nonnegative().optional(),
+  optimizerCandidateSample: z.array(portfolioOptimizerCandidateSummarySchema).default([]).optional(),
+  selectedCandidate: z.union([portfolioOptimizerCandidateSchema, portfolioOptimizerCandidateSummarySchema]).nullable().optional(),
+  optimizerDisclosures: z.array(z.string()).default([]).optional(),
+  positionViews: z.array(portfolioPositionFactorViewSchema).default([]),
+  positionExposures: z.array(factorExposureSchema).default([]),
+  summaryMd: z.string(),
+  ...investorMetadataShape,
 })
 
 export const factorRotationStrategySchema = z.object({
@@ -1028,6 +1691,12 @@ export type MacroHighSignalSeries = z.infer<typeof macroHighSignalSeriesSchema>
 export type MacroHighSignalPack = z.infer<typeof macroHighSignalPackSchema>
 export type FactorDefinition = z.infer<typeof factorDefinitionSchema>
 export type FactorReturn = z.infer<typeof factorReturnSchema>
+export type FactorExtremeMove = z.infer<typeof factorExtremeMoveSchema>
+export type FactorExtremePair = z.infer<typeof factorExtremePairSchema>
+export type FactorValuation = z.infer<typeof factorValuationSchema>
+export type FactorValuationStock = z.infer<typeof factorValuationStockSchema>
+export type FactorHistory = z.infer<typeof factorHistorySchema>
+export type FactorSparkline = z.infer<typeof factorSparklineSchema>
 export type FactorIntradaySnapshot = z.infer<typeof factorIntradaySnapshotSchema>
 export type FactorRegimePerformance = z.infer<typeof factorRegimePerformanceSchema>
 export type FactorExposure = z.infer<typeof factorExposureSchema>
@@ -1035,14 +1704,21 @@ export type FactorRotationStrategy = z.infer<typeof factorRotationStrategySchema
 export type FactorDashboard = z.infer<typeof factorDashboardSchema>
 export type CountryReportRequest = z.infer<typeof countryReportRequestSchema>
 export type PortfolioIntelligenceRequest = z.infer<typeof portfolioIntelligenceRequestSchema>
+export type PortfolioAttributionRequest = z.infer<typeof portfolioAttributionRequestSchema>
+export type PortfolioHedgeConstraints = z.infer<typeof portfolioHedgeConstraintsSchema>
+export type PortfolioHedgeRequest = z.infer<typeof portfolioHedgeRequestSchema>
 export type PortfolioStressTestRequest = z.infer<typeof portfolioStressTestRequestSchema>
+export type ModelFactorAnalysisRequest = z.infer<typeof modelFactorAnalysisRequestSchema>
 export type WatchlistIntelligenceRequest = z.infer<typeof watchlistIntelligenceRequestSchema>
 export type SecurityIntelligenceBundle = z.infer<typeof securityIntelligenceBundleSchema>
 export type CompanyIntelligenceBundle = z.infer<typeof companyIntelligenceBundleSchema>
 export type EarningsPreviewBundle = z.infer<typeof earningsPreviewBundleSchema>
 export type PortfolioAnalysis = z.infer<typeof portfolioAnalysisSchema>
+export type PortfolioAttribution = z.infer<typeof portfolioAttributionSchema>
+export type PortfolioHedge = z.infer<typeof portfolioHedgeSchema>
 export type PortfolioStressTest = z.infer<typeof portfolioStressTestSchema>
 export type ModelPortfolioFactorView = z.infer<typeof modelPortfolioFactorViewSchema>
+export type ModelFactorAnalysis = z.infer<typeof modelFactorAnalysisSchema>
 export type WatchlistIntelligenceBundle = z.infer<typeof watchlistIntelligenceBundleSchema>
 export type CountryReport = z.infer<typeof countryReportSchema>
 export type FootnoteTopic = z.infer<typeof footnoteTopicSchema>

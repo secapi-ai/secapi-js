@@ -1,8 +1,8 @@
 import { SecApiClient } from "../src/index.js"
 
 const client = new SecApiClient({
-  apiKey: process.env.SECAPI_API_KEY ?? process.env.OMNI_DATASTREAM_API_KEY,
-  baseUrl: process.env.SECAPI_BASE_URL ?? process.env.SECAPI_API_BASE_URL ?? process.env.OMNI_DATASTREAM_BASE_URL ?? "https://api.secapi.ai",
+  apiKey: process.env.SECAPI_API_KEY,
+  baseUrl: process.env.SECAPI_BASE_URL ?? process.env.SECAPI_API_BASE_URL ?? "https://api.secapi.ai",
 })
 
 const [entity, filings, latest, sectionCompact, sectionFull, statements, offerings, marketCalendar, marketIndices, indexConstituents, volatilitySignal] = await Promise.all([

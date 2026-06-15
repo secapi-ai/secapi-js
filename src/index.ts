@@ -53,6 +53,8 @@ import {
   agentBootstrapTokenSchema,
   agentBootstrapSchema,
   installPayloadSchema,
+  portfolioHedgeSchema,
+  modelFactorAnalysisSchema,
   responseViewSchema,
 } from "./generated-contracts/index.js"
 import type { z } from "zod"
@@ -66,7 +68,7 @@ export type ResponseView = z.infer<typeof responseViewSchema>
 
 const DEFAULT_BASE_URL = "https://api.secapi.ai"
 const DEFAULT_API_VERSION = "2026-03-19"
-const SDK_VERSION = "0.4.1"
+export const SDK_VERSION = "0.5.0"
 const POSTHOG_CAPTURE_HOST = "https://us.i.posthog.com"
 
 const SAFE_RETRY_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
@@ -143,6 +145,53 @@ type FactorKeySelection = FactorResponseControls & {
   lookback?: string
 }
 
+type FactorBulkDownloadParams = FactorKeySelection & {
+  format?: "json" | "csv"
+}
+
+type FactorHistoryParams = FactorResponseControls & {
+  range?: string
+  date_from?: string
+  date_to?: string
+  format?: "json" | "csv"
+}
+
+type FactorSparklineParams = FactorKeySelection & {
+  range?: string
+  metric?: "scaled_return" | "pure_return" | "raw_return" | "z_score"
+  points?: number
+  date_from?: string
+  date_to?: string
+  format?: "json" | "csv"
+}
+
+type FactorValuationWeightingMode = "long_short_equal" | "long_leg_focus" | "short_leg_focus"
+
+type FactorValuationParams = FactorKeySelection & {
+  side?: "tailwind" | "headwind" | "neutral" | "all"
+  signal?: "tailwind" | "headwind" | "neutral" | "all"
+  sort?: "opportunity_score" | "abs_z_score" | "factor_key"
+  weighting_mode?: FactorValuationWeightingMode
+  weighting?: FactorValuationWeightingMode
+  format?: "json" | "csv"
+  limit?: number
+}
+
+type FactorValuationStockParams = FactorKeySelection & {
+  factor?: string
+  factorKey?: string
+  key?: string
+  signal?: "all" | "tailwind" | "headwind" | "neutral"
+  stance?: "beneficiaries" | "at_risk" | "both"
+  side?: "beneficiary" | "beneficiaries" | "long" | "winners" | "opportunity" | "opportunities" | "at_risk" | "risk" | "risks" | "short" | "losers" | "both" | "all"
+  direction?: "beneficiary" | "beneficiaries" | "long" | "winners" | "opportunity" | "opportunities" | "at_risk" | "risk" | "risks" | "short" | "losers" | "both" | "all"
+  weighting_mode?: FactorValuationWeightingMode
+  weighting?: FactorValuationWeightingMode
+  format?: "json" | "csv"
+  limit?: number
+  sort?: "score" | "abs_beta" | "symbol"
+}
+
 type PortfolioHoldingInput = {
   symbol: string
   weight: number
@@ -166,10 +215,16 @@ type PortfolioAnalysisRequest = {
   lookback?: string
   category?: string
   keys?: string[]
+  benchmarkLabel?: string
+  benchmarkHoldings?: PortfolioHoldingInput[]
+  whatIfLabel?: string
+  whatIfHoldings?: PortfolioHoldingInput[]
 }
 
 type PortfolioAttributionRequest = PortfolioAnalysisRequest & {
   window?: string
+  frequency?: "daily" | "weekly" | "monthly" | "quarterly" | "annual"
+  exportFormat?: "json" | "csv" | "both"
   category?: string
 }
 
@@ -177,12 +232,37 @@ type PortfolioOptimizeRequest = PortfolioAnalysisRequest & {
   category?: string
   objective?: "factor_neutral" | "min_drawdown" | "regime_aware"
   maxHedges?: number
+  constraints?: PortfolioOptimizerConstraintsInput
+}
+
+type PortfolioOptimizerConstraintsInput = {
+  maxCandidates?: number
+  maxIterations?: number
+  maxRuntimeMs?: number
+  maxPositionWeight?: number
+  minPositionWeight?: number
+  longOnly?: boolean
+  turnoverLimit?: number
+  riskFreeRate?: number
 }
 
 type PortfolioHedgeRequest = PortfolioAnalysisRequest & {
   objective?: "factor_neutral" | "min_drawdown" | "regime_aware"
   mode?: "compact" | "standard"
-  constraints?: Record<string, unknown>
+  constraints?: {
+    maxHedges?: number
+    maxPositionWeight?: number
+    maxTotalHedgeWeight?: number
+    maxSectorWeight?: number
+    hedgeIntensity?: number
+    longOnly?: boolean
+    allowedInstrumentTypes?: Array<"equity" | "etf" | "future" | "option" | "cash">
+    customUniverse?: string[]
+    targetExposures?: Record<string, number>
+    minConfidence?: "low" | "medium" | "high"
+    minLiquidityUsd?: number
+    excludedSectors?: string[]
+  }
 }
 
 type PortfolioStressTestRequest = {
@@ -190,19 +270,74 @@ type PortfolioStressTestRequest = {
   country?: string
   lookback?: string
   category?: string
+  keys?: string[]
   scenarioKey?: "us_recession" | "higher_for_longer" | "china_growth_scare"
 }
 
 type ModelFactorAnalysisRequest = {
-  model?: Record<string, unknown>
+  model?: {
+    id?: string
+    label?: string
+    description?: string
+    tags?: string[]
+    source?: "turos" | "client" | "model_builder"
+  }
   country?: string
   lookback?: string
   window?: string
   category?: string
   keys?: string[]
-  include?: Record<string, unknown>
-  hedge?: Record<string, unknown>
+  include?: {
+    attribution?: boolean
+    hedge?: boolean
+    optimizer?: boolean
+    positionViews?: boolean
+  }
+  hedge?: {
+    objective?: "factor_neutral" | "min_drawdown" | "regime_aware"
+    mode?: "compact" | "standard"
+    constraints?: PortfolioHedgeRequest["constraints"]
+  }
+  optimizer?: {
+    objective?: "factor_neutral" | "min_drawdown" | "regime_aware"
+    constraints?: PortfolioOptimizerConstraintsInput
+  }
   holdings: PortfolioHoldingInput[]
+}
+
+export type McpToolCallOptions = RequestOptions & {
+  id?: string | number
+}
+
+export type AgentIssuerParams = {
+  ticker?: string
+  cik?: string
+}
+
+export type DashboardUsageWindowParams = {
+  since?: string
+  until?: string
+  limit?: number
+}
+
+export type DashboardUsageSeriesParams = DashboardUsageWindowParams & {
+  bucket?: "hour" | "day"
+}
+
+export type DashboardUsageRequestLogParams = DashboardUsageWindowParams & {
+  requestId?: string
+  meterClass?: string
+  status?: "success" | "error"
+}
+
+export type DashboardUsageExportParams = DashboardUsageRequestLogParams & {
+  format?: "json"
+}
+
+export type DashboardUsageExportCsvParams = DashboardUsageRequestLogParams
+
+export type DashboardUsageActivityParams = DashboardUsageWindowParams & {
+  auditLimit?: number
 }
 
 type ParsedResponse = {
@@ -349,6 +484,18 @@ function buildUrl(path: string, params?: Record<string, unknown>) {
 
   const search = buildSearchParams(params)
   return search.size > 0 ? `${url.pathname}?${search.toString()}` : url.pathname
+}
+
+function withRequiredInclude<T extends Record<string, unknown>>(params: T, required: string): T {
+  const existing = params.include
+  const includes = Array.isArray(existing)
+    ? existing.map(String)
+    : typeof existing === "string"
+      ? existing.split(",")
+      : []
+  const normalized = new Set(includes.map((entry) => entry.trim().toLowerCase()).filter(Boolean))
+  if (!normalized.has(required)) includes.push(required)
+  return { ...params, include: includes.join(",") }
 }
 
 function methodOf(init: RequestInit) {
@@ -908,6 +1055,38 @@ export class SecApiClient {
     }, undefined, options)
   }
 
+  async createMonitor(
+    body: { name: string; query: string; filters?: Record<string, unknown> },
+    options?: RequestOptions,
+  ) {
+    return this.request("/v1/monitors", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }, undefined, options)
+  }
+
+  async monitorMatches(monitorId: string, params: RequestParams<{ cursor?: string; limit?: number }> = {}) {
+    return this.get(`/v1/monitors/${encodeURIComponent(monitorId)}/matches`, params)
+  }
+
+  async callMcpTool(toolName: string, args: Record<string, unknown> = {}, options: RequestOptions & { id?: string | number } = {}) {
+    const { id, ...requestOptions } = options
+    return this.request("/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: id ?? randomId(),
+        method: "tools/call",
+        params: {
+          name: toolName,
+          arguments: args,
+        },
+      }),
+    }, undefined, requestOptions)
+  }
+
   async rotateWebhookEndpointSecret(webhookId: string, options?: RequestOptions) {
     return this.request(`/v1/webhook_endpoints/${webhookId}/rotate_secret`, {
       method: "POST",
@@ -1009,6 +1188,10 @@ export class SecApiClient {
     return this.get("/v1/filings/latest", params)
   }
 
+  async agentLatestFiling(params: RequestParams<{ ticker?: string; cik?: string; form?: string }>) {
+    return this.latestFiling({ ...params, view: "agent" } as RequestParams<{ ticker?: string; cik?: string; form?: string; view: "agent" }>)
+  }
+
   async renderLatestFiling(params: RequestParams<{ ticker?: string; cik?: string; form?: string }>) {
     return this.get("/v1/filings/latest/render", params)
   }
@@ -1016,6 +1199,10 @@ export class SecApiClient {
   async latestSection(params: RequestParams<{ ticker?: string; cik?: string; form?: string; sectionKey: string; mode?: "compact" | "full" }>) {
     const { sectionKey, ...rest } = params
     return this.get(`/v1/filings/latest/sections/${sectionKey}`, rest)
+  }
+
+  async agentSection(params: RequestParams<{ ticker?: string; cik?: string; form?: string; sectionKey: string; filing_year?: number }>) {
+    return this.latestSection({ ...params, mode: "compact" })
   }
 
   async latestRiskCategories(params: RequestParams<{ ticker?: string; cik?: string; form?: string }> = {}) {
@@ -1040,6 +1227,14 @@ export class SecApiClient {
 
   async searchSections(params: RequestParams<{ ticker?: string; cik?: string; form?: string; filing_id?: string; q?: string; cursor?: string; limit?: number }>) {
     return this.get("/v1/sections/search", params)
+  }
+
+  async semanticSearch(params: RequestParams<{ q: string; ticker?: string; cik?: string; form?: string; filing_year?: number; mode?: "keyword" | "semantic" | "hybrid"; cursor?: string; limit?: number; view?: ResponseView }>) {
+    return this.get("/v1/search/semantic", params)
+  }
+
+  async searchFulltext(params: RequestParams<{ q: string; ticker?: string; cik?: string; form?: string; limit?: number }>) {
+    return this.get("/v1/search/fulltext", params)
   }
 
   async segmentedRevenues(
@@ -1172,6 +1367,10 @@ export class SecApiClient {
     return this.get("/v1/forms/144", params)
   }
 
+  async agentForm144(params: RequestParams<{ ticker?: string; cik?: string; limit?: number }> = {}) {
+    return this.form144Filings({ ...params, view: "agent" })
+  }
+
   async companySubsidiaries(
     params: RequestParams<{ ticker?: string; cik?: string; view?: ResponseView }> = {},
   ) {
@@ -1186,6 +1385,10 @@ export class SecApiClient {
 
   async marketCalendar(params: RequestParams<{ market?: string; start?: string; duration?: number }> = {}) {
     return this.get("/v1/market/calendar", params)
+  }
+
+  async marketEarningsCalendar(params: RequestParams<{ ticker?: string; date_from?: string; date_to?: string; limit?: number }> = {}) {
+    return this.get("/v1/market/earnings-calendar", params)
   }
 
   async marketSnapshots(params: RequestParams<{ symbols: string | string[] }>) {
@@ -1244,12 +1447,20 @@ export class SecApiClient {
     return this.get("/v1/factors/returns", params)
   }
 
-  async factorHistory(factorKey: string, params: RequestParams<FactorResponseControls & { range?: string; date_from?: string; date_to?: string }> = {}) {
+  async factorHistory(factorKey: string, params: RequestParams<FactorHistoryParams> = {}) {
     return this.get(`/v1/factors/history/${encodeURIComponent(factorKey)}`, params)
   }
 
-  async factorSparklines(params: RequestParams<FactorKeySelection & { range?: string; metric?: "scaled_return" | "pure_return" | "raw_return" | "z_score"; points?: number; date_from?: string; date_to?: string }> = {}) {
+  async factorHistoryCsv(factorKey: string, params: RequestParams<Omit<FactorHistoryParams, "format">> = {}) {
+    return this.get<string>(`/v1/factors/history/${encodeURIComponent(factorKey)}`, { ...params, format: "csv" })
+  }
+
+  async factorSparklines(params: RequestParams<FactorSparklineParams> = {}) {
     return this.get("/v1/factors/sparklines", params)
+  }
+
+  async factorSparklinesCsv(params: RequestParams<Omit<FactorSparklineParams, "format">> = {}) {
+    return this.get<string>("/v1/factors/sparklines", { ...params, format: "csv" })
   }
 
   async factorReturnsIntraday(params: RequestParams<FactorKeySelection> = {}) {
@@ -1272,20 +1483,42 @@ export class SecApiClient {
     return this.get("/v1/factors/screen", params)
   }
 
-  async factorExtremeMoves(params: RequestParams<FactorKeySelection & { limit?: number; side?: "both" | "up" | "down" | "flat"; sort?: "abs_z_score" | "abs_scaled_return"; min_z_score?: number }> = {}) {
+  async factorExtremeMoves(params: RequestParams<FactorKeySelection & {
+    limit?: number
+    side?: "both" | "up" | "down" | "flat"
+    direction?: "both" | "up" | "down" | "flat"
+    sort?: "abs_z_score" | "abs_scaled_return"
+    min_z_score?: number
+    minAbsZScore?: number
+  }> = {}) {
     return this.get("/v1/factors/extreme-moves", params)
   }
 
-  async factorExtremePairs(params: RequestParams<FactorKeySelection & { limit?: number; side?: string; direction?: string; min_z_score?: number; sort?: string }> = {}) {
+  async factorExtremePairs(params: RequestParams<FactorKeySelection & {
+    limit?: number
+    side?: "both" | "factor1" | "factor2" | "flat"
+    direction?: "both" | "factor1" | "factor2" | "flat"
+    min_z_score?: number
+    minAbsZScore?: number
+    sort?: "abs_z_score" | "abs_spread_return"
+  }> = {}) {
     return this.get("/v1/factors/extreme-pairs", params)
   }
 
-  async factorValuations(params: RequestParams<FactorKeySelection & { side?: "tailwind" | "headwind" | "neutral" | "all"; signal?: "tailwind" | "headwind" | "neutral" | "all"; sort?: string; limit?: number }> = {}) {
+  async factorValuations(params: RequestParams<FactorValuationParams> = {}) {
     return this.get("/v1/factors/valuations", params)
   }
 
-  async factorValuationStocks(params: RequestParams<FactorKeySelection & { factor?: string; factorKey?: string; key?: string; signal?: "all" | "tailwind" | "headwind" | "neutral"; stance?: "beneficiaries" | "at_risk" | "both"; side?: string; direction?: string; limit?: number; sort?: "score" | "abs_beta" | "symbol" }> = {}) {
+  async factorValuationsCsv(params: RequestParams<Omit<FactorValuationParams, "format">> = {}) {
+    return this.get<string>("/v1/factors/valuations", { ...params, format: "csv" })
+  }
+
+  async factorValuationStocks(params: RequestParams<FactorValuationStockParams> = {}) {
     return this.get("/v1/factors/valuations/stocks", params)
+  }
+
+  async factorValuationStocksCsv(params: RequestParams<Omit<FactorValuationStockParams, "format">> = {}) {
+    return this.get<string>("/v1/factors/valuations/stocks", { ...params, format: "csv" })
   }
 
   async factorExposures(params: RequestParams<FactorKeySelection & { symbols: string | string[] }>) {
@@ -1316,8 +1549,12 @@ export class SecApiClient {
     return this.get(`/v1/factors/pair-history/${encodeURIComponent(f1)}/${encodeURIComponent(f2)}`, params)
   }
 
-  async factorBulkDownload(params: RequestParams<FactorKeySelection> = {}) {
+  async factorBulkDownload(params: RequestParams<FactorBulkDownloadParams> = {}) {
     return this.get("/v1/factors/bulk-download", params)
+  }
+
+  async factorBulkDownloadCsv(params: RequestParams<Omit<FactorBulkDownloadParams, "format">> = {}) {
+    return this.get<string>("/v1/factors/bulk-download", { ...params, format: "csv" })
   }
 
   async factorCustom(body: FactorCustomDiscoveryRequest, params: RequestParams<FactorPostQueryControls> = {}, options?: RequestOptions) {
@@ -1349,11 +1586,12 @@ export class SecApiClient {
   }
 
   async modelFactorAnalysis(body: ModelFactorAnalysisRequest, params: RequestParams<FactorPostQueryControls> = {}, options?: RequestOptions) {
-    return this.request(buildUrl("/v1/models/factor-analysis", params), {
+    const urlParams = withRequiredInclude(params, "trust")
+    return this.request(buildUrl("/v1/models/factor-analysis", urlParams), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-    }, undefined, mergeRequestOptions(requestOptionsFromParams(params), options))
+    }, modelFactorAnalysisSchema, mergeRequestOptions(requestOptionsFromParams(params), options))
   }
 
   async portfolioOptimize(body: PortfolioOptimizeRequest, params: RequestParams<FactorPostQueryControls> = {}, options?: RequestOptions) {
@@ -1369,7 +1607,7 @@ export class SecApiClient {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-    }, undefined, mergeRequestOptions(requestOptionsFromParams(params), options))
+    }, portfolioHedgeSchema, mergeRequestOptions(requestOptionsFromParams(params), options))
   }
 
   async portfolioStressTest(body: PortfolioStressTestRequest, params: RequestParams<FactorPostQueryControls> = {}, options?: RequestOptions) {
@@ -1482,7 +1720,7 @@ export class SecApiClient {
   }
 
   async statements(
-    params: RequestParams<{ ticker?: string; cik?: string; statement?: string; period?: "annual" | "quarterly"; limit?: number }>,
+    params: RequestParams<{ ticker?: string; cik?: string; statement?: string; period?: "annual" | "quarterly"; limit?: number; view?: ResponseView }>,
   ) {
     return this.get("/v1/statements", params)
   }
@@ -1493,20 +1731,27 @@ export class SecApiClient {
 
   async statementByKey(
     statementKey: string,
-    params: RequestParams<{ ticker?: string; cik?: string; period?: "annual" | "quarterly"; limit?: number }>,
+    params: RequestParams<{ ticker?: string; cik?: string; period?: "annual" | "quarterly"; limit?: number; view?: ResponseView }>,
   ) {
     return this.get(`/v1/statements/${statementKey}`, params)
   }
 
-  async companyIncomeStatements(params: RequestParams<{ ticker: string; period?: "annual" | "quarterly"; limit?: number }>) {
+  async agentStatement(
+    statementKey: string,
+    params: RequestParams<{ ticker?: string; cik?: string; period?: "annual" | "quarterly"; limit?: number }>,
+  ) {
+    return this.statementByKey(statementKey, { ...params, view: "agent" })
+  }
+
+  async companyIncomeStatements(params: RequestParams<{ ticker: string; period?: "annual" | "quarterly"; limit?: number; view?: "compact" }>) {
     return this.get("/v1/companies/income-statements", params)
   }
 
-  async companyBalanceSheets(params: RequestParams<{ ticker: string; period?: "annual" | "quarterly"; limit?: number }>) {
+  async companyBalanceSheets(params: RequestParams<{ ticker: string; period?: "annual" | "quarterly"; limit?: number; view?: "compact" }>) {
     return this.get("/v1/companies/balance-sheets", params)
   }
 
-  async companyCashFlowStatements(params: RequestParams<{ ticker: string; period?: "annual" | "quarterly"; limit?: number }>) {
+  async companyCashFlowStatements(params: RequestParams<{ ticker: string; period?: "annual" | "quarterly"; limit?: number; view?: "compact" }>) {
     return this.get("/v1/companies/cash-flow-statements", params)
   }
 
@@ -1528,6 +1773,14 @@ export class SecApiClient {
 
   async latest13F(params: RequestParams<{ cik: string; reportDate?: string; filingDate?: string; limit?: number; view?: ResponseView }>) {
     return this.get("/v1/owners/13f", params)
+  }
+
+  async institutionalHolders(params: RequestParams<{ ticker?: string; cik?: string; limit?: number; view?: ResponseView }>) {
+    return this.get("/v1/owners/institutional/ticker", params)
+  }
+
+  async agentInstitutionalHolders(params: RequestParams<{ ticker?: string; cik?: string; limit?: number }>) {
+    return this.institutionalHolders({ ...params, view: "agent" })
   }
 
   async list13FFilings(params: RequestParams<{ cik: string; limit?: number; since?: string }>) {
@@ -1853,12 +2106,9 @@ export class SecApiFilingStream {
   }
 }
 
-export {
-  SecApiClient as OmniDatastreamClient,
-  SecApiError as OmniDatastreamError,
-  SecApiValidationError as OmniDatastreamValidationError,
-}
-
+export const OmniDatastreamClient = SecApiClient
+export const OmniDatastreamError = SecApiError
+export const OmniDatastreamValidationError = SecApiValidationError
 export type OmniDatastreamClientOptions = SecApiClientOptions
 
 export type {

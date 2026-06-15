@@ -1,6 +1,6 @@
 {
   "name": "@secapi/sdk-js",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "TypeScript and JavaScript SDK for SEC API",
   "private": false,
   "type": "module",
@@ -19,14 +19,8 @@
   "dependencies": {
     "zod": "^4.4.3"
   },
-  "devDependencies": {
-    "@types/node": "^24.10.1",
-    "typescript": "^5.9.3"
-  },
   "scripts": {
-    "build": "rm -rf dist && bun build src/index.ts --outdir dist --format esm --target node && tsc -p tsconfig.build.json",
-    "prepack": "bun run build",
-    "prepublishOnly": "bun run build",
+    "build": "node ../../scripts/contracts/sync_sdk_js_contracts.mjs && rm -rf dist && bun build src/index.ts --outdir dist --format esm --target node && tsc -p tsconfig.build.json",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
