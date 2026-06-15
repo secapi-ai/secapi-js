@@ -19,8 +19,14 @@
   "dependencies": {
     "zod": "^4.4.3"
   },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  },
   "scripts": {
-    "build": "node ../../scripts/contracts/sync_sdk_js_contracts.mjs && rm -rf dist && bun build src/index.ts --outdir dist --format esm --target node && tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && bun build src/index.ts --outdir dist --format esm --target node && tsc -p tsconfig.build.json",
+    "prepack": "bun run build",
+    "prepublishOnly": "bun run build",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
