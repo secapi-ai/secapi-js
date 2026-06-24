@@ -1077,144 +1077,13 @@ const responseExampleBySchema: Record<string, unknown> = {
     asOf: exampleAsOf,
     scenarioKey: "higher_for_longer",
     scenarioLabel: "Higher for Longer",
-    scenarioSource: "catalog",
     estimatedDrawdownPercent: -7.4,
     factorShocks: { VALUE: 0.02, MOMENTUM: -0.04, QUALITY: 0.01 },
     macroShocks: { rates: 0.75, credit_spreads: 0.35 },
-    contributions: [
-      {
-        factorKey: "MOMENTUM",
-        beta: 1.1,
-        shock: -0.04,
-        contribution: -0.044,
-        direction: "headwind",
-        rationale: "MOMENTUM contribution equals current portfolio beta multiplied by the scenario shock.",
-        sensitivitySource: "factor_v1_macro_conditioned_portfolio_stress",
-      },
-    ],
     regime: null,
     conditioningNotes: ["Uses bounded factor shocks from historical higher-rate episodes."],
     summaryMd: "Portfolio drawdown proxy is driven mainly by momentum and duration-sensitive exposures.",
     responseMode: "compact",
-    ...exampleTrustMetadata,
-  },
-  PortfolioStressScenarioCatalog: {
-    object: "portfolio_stress_scenario_catalog",
-    asOf: exampleAsOf,
-    scenarios: [
-      {
-        scenarioKey: "higher_for_longer",
-        label: "Higher-for-longer rates",
-        macroShocks: { growth: -0.01, unemployment: 0.004, inflation: 0.006, policyRate: 0.015 },
-        factorShocks: { VALUE: 0.03, MOMENTUM: -0.04, QUALITY: 0.01, RATES: 0.04 },
-        supportedCountries: ["US", "JP", "CN"],
-        methodology: "factor_v1_macro_conditioned_portfolio_stress",
-        confidence: "medium",
-        limitations: ["Scenario shocks are deterministic launch-model assumptions, not probability-weighted forecasts."],
-        sourceVersion: "2026-03-26.1",
-      },
-    ],
-    summaryMd: "Portfolio stress scenario catalog lists deterministic macro/factor shocks supported by the stress-test endpoint.",
-    ...exampleTrustMetadata,
-  },
-  FactorMacroSensitivity: {
-    object: "factor_macro_sensitivity",
-    id: "factor_macro_sensitivity_US_higher_for_longer",
-    asOf: exampleAsOf,
-    country: "US",
-    scenarioKey: "higher_for_longer",
-    rows: [
-      {
-        factorKey: "MOMENTUM",
-        indicatorKey: null,
-        macroShockKey: "policyRate",
-        sensitivity: -0.028,
-        direction: "headwind",
-        confidence: "medium",
-        rationale: "MOMENTUM is directly shocked in the Higher-for-longer rates scenario.",
-        observationCount: null,
-        methodology: "macro_factor_sensitivity_v1_heuristic",
-      },
-    ],
-    topTailwinds: ["VALUE"],
-    topHeadwinds: ["MOMENTUM"],
-    limitations: ["v1 sensitivity is heuristic and explainable; it is not a point-in-time empirical regression."],
-    summaryMd: "US Higher-for-longer rates sensitivity highlights 1 factor headwind and 1 tailwind.",
-    ...exampleTrustMetadata,
-  },
-  MacroStatus: {
-    object: "macro_status",
-    status: "ready",
-    generatedAt: exampleAsOf,
-    countries: [
-      {
-        country: "US",
-        status: "ready",
-        seriesCount: 32,
-        freshCount: 32,
-        staleCount: 0,
-        sourceErrorCount: 0,
-        fallbackCount: 0,
-        latestMaterializedAt: "2026-06-01T00:00:00.000Z",
-        oldestFreshnessAgeHours: 560,
-        topAlerts: [],
-      },
-    ],
-    sources: [
-      {
-        sourceKey: "fred",
-        status: "ready",
-        indicatorCount: 33,
-        unexpectedFallbackCount: 0,
-        sourceErrorCount: 0,
-      },
-    ],
-    alerts: [],
-    methodology: {
-      id: "macro_status_artifact_v1",
-      version: "v1",
-      summary: "Macro status is derived from source-health, source-coverage, and macro data-plane validation artifacts.",
-    },
-    sourceRights: {
-      posture: "public_safe_summary",
-      summary: "Status exposes source posture counts and freshness health, not credentials or raw vendor payloads.",
-    },
-  },
-  CountryReport: {
-    object: "country_report",
-    id: "country_report_US_18m",
-    asOf: exampleAsOf,
-    country: "US",
-    lookback: "18m",
-    indicators: [],
-    releases: [],
-    forecasts: [],
-    regime: exampleRegime,
-    likelyDrivers: [],
-    briefing: {
-      topLine: "US macro backdrop is Soft Landing over 18m.",
-      regime: { key: "soft_landing", label: "Soft Landing", confidence: "medium" },
-      keyDrivers: [],
-      watchItems: [],
-      investmentImplications: {
-        factors: ["VALUE: tailwind from current regime"],
-        sectors: [],
-        country: ["US regime should be paired with releases, forecasts, credit/rates, and factor exposures before making investment calls."],
-        portfolio: ["Provide holdings to identify top macro/factor risk drivers for the portfolio."],
-        symbols: [],
-      },
-      dataQuality: {
-        status: "fresh",
-        indicatorCount: 32,
-        releaseCount: 4,
-        forecastCount: 4,
-        sourcePosture: "public_safe",
-        fallbackCount: 0,
-        degraded: false,
-        notes: ["Briefing v1 is deterministic and source-grounded."],
-      },
-    },
-    summaryMd: "US macro regime: Soft Landing. Top factor tailwind is VALUE.",
     ...exampleTrustMetadata,
   },
 }
@@ -1272,14 +1141,6 @@ const requestExampleBySchema: Record<string, unknown> = {
     category: "style",
     keys: ["VALUE", "MOMENTUM", "QUALITY"],
     scenarioKey: "higher_for_longer",
-    holdings: exampleHoldings,
-  },
-  CountryReportRequest: {
-    country: "US",
-    lookback: "18m",
-    horizon: "6m",
-    briefingMode: "portfolio",
-    symbols: ["AAPL", "NVDA"],
     holdings: exampleHoldings,
   },
   ModelFactorAnalysisRequest: {
@@ -1514,37 +1375,6 @@ const factorResponseParameters = [
 const factorResponseParams = (parameters: readonly Record<string, unknown>[] = [], options: { responseModeDefault?: "compact" | "standard" | "verbose" } = {}) => [
   ...parameters,
   ...factorResponseParameters.map((parameter) => {
-    if (parameter.name !== "response_mode" || !options.responseModeDefault) return parameter
-    return {
-      ...parameter,
-      schema: {
-        ...parameter.schema,
-        default: options.responseModeDefault,
-      },
-    }
-  }),
-]
-
-const macroResponseParameters = [
-  {
-    name: "response_mode",
-    in: "query",
-    required: false,
-    schema: { type: "string", enum: ["compact", "standard", "verbose", "agent"], default: "standard" },
-    description: "Response projection. compact is token-efficient for agents; standard preserves the full launched shape; verbose is reserved for full trust/drill-down expansions. agent aliases compact.",
-  },
-  {
-    name: "include",
-    in: "query",
-    required: false,
-    schema: { type: "string" },
-    description: "Comma-separated compact-mode expansions such as trust, metadata, series, releases, calendar, forecasts, or source_plan.",
-  },
-] as const
-
-const macroResponseParams = (parameters: readonly Record<string, unknown>[] = [], options: { responseModeDefault?: "compact" | "standard" | "verbose" } = {}) => [
-  ...parameters,
-  ...macroResponseParameters.map((parameter) => {
     if (parameter.name !== "response_mode" || !options.responseModeDefault) return parameter
     return {
       ...parameter,
@@ -2700,53 +2530,49 @@ export const openApiDocument = {
     "/v1/macro/indicators": {
       get: {
         summary: "Return official-source macro indicator observations with revision-aware provenance and country-quality metadata",
-        parameters: macroResponseParams([
+        parameters: [
           { name: "indicator", in: "query", required: true, schema: { type: "string" }, description: "Indicator key (alias: indicator_key)" },
           { name: "country", in: "query", schema: { type: "string", default: "US" }, description: "ISO country code (e.g. US, JP, CN)" },
           { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 240, default: 24 }, description: "Maximum observations to return (default 24, max 240)" },
-        ]),
+        ],
       },
     },
     "/v1/macro/releases": {
       get: {
         summary: "Return macro release observations with actual, prior, consensus, and surprise metadata",
-        parameters: macroResponseParams([
+        parameters: [
           { name: "country", in: "query", schema: { type: "string", default: "US" }, description: "ISO country code (e.g. US, JP, CN)" },
           { name: "indicator", in: "query", schema: { type: "string" }, description: "Optional indicator key filter (alias: indicator_key)" },
-          { name: "status", in: "query", schema: { type: "string", enum: ["released", "scheduled"], default: "released" }, description: "Released history by default. Use scheduled to return upcoming calendar events." },
-          { name: "days", in: "query", schema: { type: "integer", minimum: 1, maximum: 180, default: 45 }, description: "Look-ahead window when status=scheduled." },
           { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 120, default: 12 }, description: "Maximum releases to return (default 12, max 120)" },
-        ]),
+        ],
       },
     },
     "/v1/macro/calendar": {
       get: {
         summary: "Return the macro event calendar for supported official-source releases and central-bank events",
-        parameters: macroResponseParams([
+        parameters: [
           { name: "country", in: "query", schema: { type: "string", default: "US" }, description: "ISO country code (e.g. US, JP, CN)" },
-          { name: "indicator", in: "query", schema: { type: "string" }, description: "Optional indicator key filter (alias: indicator_key)" },
           { name: "days", in: "query", schema: { type: "integer", minimum: 1, maximum: 180, default: 45 }, description: "Look-ahead window in days (default 45, max 180)" },
-          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 120, default: 120 }, description: "Maximum scheduled events to return (default/max 120)" },
-        ]),
+        ],
       },
     },
     "/v1/macro/forecasts": {
       get: {
         summary: "Return SEC API forecast baselines and scenario-aware macro projections with methodology metadata",
-        parameters: macroResponseParams([
+        parameters: [
           { name: "country", in: "query", schema: { type: "string", default: "US" }, description: "ISO country code (e.g. US, JP, CN)" },
           { name: "indicator", in: "query", schema: { type: "string" }, description: "Optional indicator key filter (alias: indicator_key)" },
           { name: "horizons", in: "query", schema: { type: "integer", minimum: 1, maximum: 6, default: 3 }, description: "Number of forecast horizons to return (default 3, max 6)" },
-        ], { responseModeDefault: "compact" }),
+        ],
       },
     },
     "/v1/macro/high-signal-pack": {
       get: {
         summary: "Return the launch-ring Tier-1 high-signal macro pack with explicit source, fallback, and release-calendar posture for supported countries",
         parameters: [
-          ...macroResponseParams([
-            { name: "country", in: "query", schema: { type: "string", default: "US" }, description: "ISO country code (e.g. US, JP, CN). Defaults to US." },
-          ], { responseModeDefault: "compact" }),
+          { name: "country", in: "query", schema: { type: "string", default: "JP" }, description: "ISO country code (e.g. US, JP, CN). Defaults to JP for backward compatibility." },
+          { name: "response_mode", in: "query", schema: { type: "string", enum: ["compact", "standard"], default: "compact" }, description: "Response projection. compact returns bounded per-series summaries; standard returns the full nested pack shape." },
+          { name: "include", in: "query", schema: { type: "string", enum: ["series"] }, description: "Use include=series to expand the full nested observations, releases, forecasts, source plans, and trust metadata." },
         ],
         responses: {
           "200": {
@@ -2756,47 +2582,10 @@ export const openApiDocument = {
         },
       },
     },
-    "/v1/macro/status": {
-      get: {
-        summary: "Return macro source-health, country coverage, freshness, and source-rights posture from validation artifacts",
-        parameters: macroResponseParams([
-          { name: "country", in: "query", schema: { type: "string" }, description: "Optional ISO country code filter (e.g. US, JP, CN)." },
-        ], { responseModeDefault: "compact" }),
-        responses: {
-          "200": {
-            description: "Successful response. Defaults to compact country/source status; pass response_mode=verbose or view=full for indicator-level rows.",
-            content: jsonContentWithExample("MacroStatus"),
-          },
-        },
-      },
-    },
     "/v1/macro/regimes": {
       get: {
         summary: "Return the current macro regime classification for a country using the canonical SEC API macro overlay",
-        parameters: macroResponseParams([
-          { name: "country", in: "query", schema: { type: "string", default: "US" }, description: "ISO country code (e.g. US, JP, CN)" },
-          { name: "lookback", in: "query", schema: { type: "string", default: "18m" }, description: "Lookback window for regime inference." },
-        ]),
-        responses: {
-          "200": {
-            description: "Successful response.",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    object: { type: "string", enum: ["list"] },
-                    data: { type: "array", items: schemaRef("MacroRegime") },
-                    hasMore: { type: "boolean" },
-                    nextCursor: { type: ["string", "null"] },
-                    requestId: { type: "string" },
-                  },
-                  required: ["object", "data"],
-                },
-              },
-            },
-          },
-        },
+        ...jsonResponse("MacroRegime"),
       },
     },
     "/v1/macro/credit-ratings": {
@@ -3196,35 +2985,12 @@ export const openApiDocument = {
         ...jsonFactorResponse("ModelFactorAnalysis"),
       },
     },
-    "/v1/factors/macro-sensitivity": {
-      get: {
-        summary: "Return explainable heuristic factor sensitivity to macro scenarios and shocks",
-        parameters: factorResponseParams([
-          { name: "country", in: "query", schema: { type: "string", default: "US" }, description: "ISO country code for regime context." },
-          { name: "scenario_key", in: "query", schema: { type: "string", enum: ["us_recession", "higher_for_longer", "china_growth_scare"], default: "higher_for_longer" }, description: "Scenario key (alias: scenarioKey)." },
-          { name: "keys", in: "query", schema: { type: "string" }, description: "Comma-separated factor key filter." },
-          { name: "indicators", in: "query", schema: { type: "string" }, description: "Optional comma-separated macro indicator keys used for labeling rows." },
-          { name: "lookback", in: "query", schema: { type: "string", default: "6m" }, description: "Lookback window for active regime context." },
-          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 25 }, description: "Maximum sensitivity rows to return." },
-        ]),
-        ...jsonFactorResponse("FactorMacroSensitivity"),
-      },
-    },
     "/v1/portfolio/stress-test": {
       post: {
         summary: "Run portfolio stress scenarios across factor and macro shock definitions with compact traceable outputs",
         parameters: factorResponseParams(),
         ...jsonRequestBody("PortfolioStressTestRequest"),
         ...jsonFactorResponse("PortfolioStressTest"),
-      },
-    },
-    "/v1/portfolio/stress-test/scenarios": {
-      get: {
-        summary: "List supported macro-conditioned portfolio stress scenarios before running a stress test",
-        parameters: factorResponseParams([
-          { name: "country", in: "query", schema: { type: "string" }, description: "Optional country context for supported-country labeling." },
-        ]),
-        ...jsonFactorResponse("PortfolioStressScenarioCatalog"),
       },
     },
     "/v1/portfolio/hedge": {
@@ -3325,7 +3091,6 @@ export const openApiDocument = {
     "/v1/intelligence/country-report": {
       post: {
         summary: "Return a country intelligence bundle covering the prior period's macro path, likely drivers, and forward view",
-        parameters: macroResponseParams([], { responseModeDefault: "standard" }),
         ...jsonRequestBody("CountryReportRequest"),
         ...jsonResponse("CountryReport"),
       },
