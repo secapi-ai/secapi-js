@@ -373,6 +373,61 @@ export const factorQualityProofSchema = z.object({
   degradedReasons: z.array(z.string()).default([]),
 })
 
+export const factorCatalogStatusSchema = z.enum([
+  "launch_ready",
+  "proof_gated_launch_candidate",
+  "beta_short_history",
+  "blocked_by_source",
+  "intentionally_deferred",
+])
+
+export const factorSourceAvailabilityStatusSchema = z.enum([
+  "implemented",
+  "data_source_available",
+  "blocked_by_source",
+  "intentionally_deferred",
+])
+
+export const factorLaunchUniverseStatusSchema = z.enum([
+  "launch_candidate",
+  "beta_short_history",
+  "blocked_by_source",
+  "deferred_not_launch_scope",
+])
+
+export const factorLaunchClaimStatusSchema = z.enum([
+  "candidate_pending_history_freshness_proof",
+  "not_claimed_beta_short_history",
+  "not_claimed_source_blocked",
+  "not_claimed_deferred_read_model",
+])
+
+export const factorLaunchParityCategorySchema = z.enum([
+  "basic",
+  "style",
+  "sector",
+  "industry",
+  "country",
+  "custom_thematic",
+  "out_of_scope_macro",
+])
+
+export const factorLaunchReadinessSchema = z.object({
+  object: z.literal("factor_launch_readiness"),
+  status: factorCatalogStatusSchema,
+  proofGated: z.boolean(),
+  proofReady: z.boolean(),
+  observedProofStatus: z.enum(["ready", "degraded", "not_available"]),
+  proofObservedAt: z.string().nullable(),
+  requiredProofArtifact: z.string().nullable(),
+  requiredProofStatus: z.enum(["ready", "degraded", "not_available"]),
+  targetHistoryStartDate: z.string().nullable(),
+  historyStartDateClaim: z.string().nullable(),
+  betaReason: z.string().nullable(),
+  exclusionReason: z.string().nullable(),
+  claimPrerequisites: z.array(z.string()).default([]),
+})
+
 export const factorDefinitionSchema = z.object({
   object: z.literal("factor_definition"),
   id: z.string(),
@@ -383,7 +438,14 @@ export const factorDefinitionSchema = z.object({
   benchmarkSymbol: z.string().nullable().optional(),
   equation: z.record(z.string(), z.number()).optional(),
   orthogonalizedAgainst: z.array(z.string()).default([]),
-  qualityProof: factorQualityProofSchema,
+  catalogStatus: factorCatalogStatusSchema,
+  sourceAvailabilityStatus: factorSourceAvailabilityStatusSchema,
+  launchUniverseStatus: factorLaunchUniverseStatusSchema,
+  launchClaimStatus: factorLaunchClaimStatusSchema,
+  launchParityCategory: factorLaunchParityCategorySchema,
+  launchReadiness: factorLaunchReadinessSchema.optional(),
+  qualityProof: factorQualityProofSchema.optional(),
+  expansionHints: z.array(z.string()).optional(),
   ...investorMetadataShape,
 })
 
@@ -676,6 +738,7 @@ export const factorExposureSchema = z.object({
   confidence: z.enum(["high", "medium", "low"]).nullable().optional(),
   modelName: z.string().nullable().optional(),
   asOf: z.string(),
+  expansionHints: z.array(z.string()).optional(),
   ...investorMetadataShape,
 })
 
@@ -857,15 +920,52 @@ export const macroHighSignalSeriesSchema = z.object({
   forecast: macroForecastSchema.nullable().optional(),
 })
 
+export const macroHighSignalCompactSeriesSchema = z.object({
+  indicatorKey: z.string().nullable(),
+  label: z.string().nullable(),
+  frequency: z.enum(["daily", "weekly", "monthly", "quarterly", "annual"]).nullable(),
+  sourceKey: z.string().nullable(),
+  sourceLabel: z.string().nullable(),
+  dataset: z.string().nullable(),
+  seriesCode: z.string().nullable(),
+  coverageState: z.enum(["live", "materialized_bootstrap", "planned"]).nullable(),
+  canonicality: z.enum(["official", "official_via_dbnomics", "fallback_harmonized"]).nullable(),
+  fallbackPolicy: z.enum(["none", "dbnomics", "imf_ifs", "world_bank"]).nullable(),
+  latest: z.object({
+    period: z.string().nullable(),
+    value: z.number().nullable(),
+    unit: z.string().nullable(),
+    asOf: z.string().nullable(),
+    freshnessStatus: z.string().nullable(),
+  }).nullable(),
+  upcomingRelease: z.object({
+    scheduledAt: z.string().nullable(),
+    status: z.string().nullable(),
+    actual: z.number().nullable(),
+    prior: z.number().nullable(),
+    consensus: z.number().nullable(),
+    surprise: z.number().nullable(),
+  }).nullable(),
+  forecast: z.object({
+    horizon: z.string().nullable(),
+    value: z.number().nullable(),
+    intervalLow: z.number().nullable(),
+    intervalHigh: z.number().nullable(),
+    scenario: z.string().nullable(),
+  }).nullable(),
+})
+
 export const macroHighSignalPackSchema = z.object({
   object: z.literal("macro_high_signal_pack"),
   id: z.string(),
   asOf: z.string(),
   country: isoCountryCodeSchema,
   ring: z.enum(["launch_ring_1", "tier_1_expansion"]),
-  series: z.array(macroHighSignalSeriesSchema).default([]),
+  seriesCount: z.number().int().nonnegative().optional(),
+  series: z.array(z.union([macroHighSignalSeriesSchema, macroHighSignalCompactSeriesSchema])).default([]),
   regime: macroRegimeSchema.nullable().optional(),
   summaryMd: z.string(),
+  expansionHints: z.array(z.string()).optional(),
   ...investorMetadataShape,
 })
 
@@ -1476,20 +1576,84 @@ export const footnoteTopicSchema = z.enum([
   "revenue",
   "debt_covenant",
   "segment",
+  // High-DD-value topics for the upcoming Company Overview "footnote red-flags"
+  // enrichment. Each has a distinctive, deterministic disclosure vocabulary so
+  // extraction stays citeable (no LLM inference).
+  "going_concern",
+  "litigation",
+  "customer_concentration",
 ])
+
+// Cap of distinct topics callable in one request. Raised from the original 5
+// to admit the three new due-diligence topics without forcing callers to drop
+// the core set.
+export const FOOTNOTE_TOPIC_MAX = 8
+
+// Multi-ticker fan-out cap. tickers.length * filingsPerTicker must also stay
+// within FOOTNOTE_FILING_BUDGET; this is the per-axis guard.
+export const FOOTNOTE_MAX_TICKERS = 8
+
+// Per-ticker filing cap for a date-range scan. The default request renders a
+// single (latest) filing per ticker; date-range requests may render up to this
+// many of the most recent filings of the requested form in the window.
+export const FOOTNOTE_MAX_FILINGS_PER_TICKER = 6
+
+// Conservative per-ticker default for date-range scans that omit
+// `filings_per_ticker`. Kept small so a bare `window` does not silently fan out
+// to the max (6) heavy renders per ticker; callers opt into more via the field.
+export const FOOTNOTE_DEFAULT_FILINGS_PER_TICKER = 3
+
+// Hard ceiling on total filings rendered across the whole request
+// (tickers x filings). Filing render is heavy (full filing render, real
+// CPU/network per filing) so this bounds total work regardless of how the
+// caller splits it across the two axes above.
+export const FOOTNOTE_FILING_BUDGET = 12
+
+const footnoteIsoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be an ISO date (YYYY-MM-DD)")
+
+// Relative window like "12mo", "3y", "90d". Resolved server-side against the
+// request time into a concrete date_from. Mutually informative with
+// date_from/date_to (explicit dates win).
+const footnoteWindowSchema = z.string().regex(/^\d{1,3}(d|w|mo|m|y)$/i, "must look like 12mo, 90d, 3y")
 
 export const footnoteIntelligenceRequestSchema = z.object({
   ticker: symbolSchema.optional(),
+  // Multi-ticker fan-out. Either `ticker` (single, back-compat) or `tickers`
+  // (1..FOOTNOTE_MAX_TICKERS) may be supplied; `cik` remains single-target.
+  tickers: z.array(symbolSchema).min(1).max(FOOTNOTE_MAX_TICKERS).optional(),
   cik: z.string().trim().min(1).optional(),
   form: z.string().trim().min(2).max(12).default("10-K"),
-  topics: z.array(footnoteTopicSchema).max(5).default([]),
+  topics: z.array(footnoteTopicSchema).max(FOOTNOTE_TOPIC_MAX).default([]),
   query: z.string().trim().min(1).nullable().optional(),
+  // Date-range scan. When any of these are set the endpoint extracts footnotes
+  // across the filings of `form` filed in the window (most recent first,
+  // capped by filings_per_ticker / the request budget) instead of only the
+  // latest filing.
+  dateFrom: footnoteIsoDateSchema.optional(),
+  dateTo: footnoteIsoDateSchema.optional(),
+  window: footnoteWindowSchema.optional(),
+  filingsPerTicker: z.number().int().min(1).max(FOOTNOTE_MAX_FILINGS_PER_TICKER).optional(),
 }).superRefine((value, ctx) => {
-  if (!value.ticker && !value.cik) {
+  const hasTicker = Boolean(value.ticker) || (Array.isArray(value.tickers) && value.tickers.length > 0)
+  if (!hasTicker && !value.cik) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["ticker"],
-      message: "ticker or cik is required",
+      message: "ticker, tickers, or cik is required",
+    })
+  }
+  if (value.cik && Array.isArray(value.tickers) && value.tickers.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["tickers"],
+      message: "provide either cik or tickers, not both",
+    })
+  }
+  if (value.dateFrom && value.dateTo && value.dateFrom > value.dateTo) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["dateTo"],
+      message: "dateTo must be on or after dateFrom",
     })
   }
 })
@@ -1511,6 +1675,66 @@ export const footnoteIntelligenceResultSchema = z.object({
   query: z.string().nullable().optional(),
   filing: filingSchema.nullable(),
   topics: z.array(footnoteTopicMatchSchema).default([]),
+  summaryMd: z.string(),
+  ...investorMetadataShape,
+})
+
+// A single (ticker, filing) extraction inside a multi-ticker / date-range
+// collection. Carries full filing provenance so callers can cite which filing
+// each footnote snippet came from.
+export const footnoteFilingResultSchema = z.object({
+  object: z.literal("footnote_filing_result"),
+  symbol: symbolSchema.nullable().optional(),
+  cik: z.string().nullable().optional(),
+  form: z.string(),
+  accessionNumber: z.string().nullable(),
+  filingDate: z.string().nullable().optional(),
+  filingUrl: z.string().nullable().optional(),
+  filing: filingSchema.nullable(),
+  topics: z.array(footnoteTopicMatchSchema).default([]),
+  summaryMd: z.string(),
+  freshness: createFootnoteFreshnessMetadataSchema().optional(),
+  materialization: createFootnoteMaterializationMetadataSchema().optional(),
+  degradedState: createFootnoteDegradedStateSchema().nullable().optional(),
+})
+
+// Per-ticker grouping inside a collection. `error` is populated (and `results`
+// empty) when the ticker could not be resolved / rendered, so one bad ticker
+// never fails the whole request.
+export const footnoteTickerResultSchema = z.object({
+  object: z.literal("footnote_ticker_result"),
+  symbol: symbolSchema.nullable().optional(),
+  cik: z.string().nullable().optional(),
+  form: z.string(),
+  filingCount: z.number().int().nonnegative(),
+  results: z.array(footnoteFilingResultSchema).default([]),
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+  }).nullable().optional(),
+})
+
+// Aggregate response for multi-ticker and/or date-range footnote diligence.
+// A separate object (rather than overloading footnote_intelligence_result)
+// keeps the single-filing shape lean and the aggregate self-describing.
+export const footnoteIntelligenceCollectionSchema = z.object({
+  object: z.literal("footnote_intelligence_collection"),
+  id: z.string(),
+  asOf: z.string(),
+  form: z.string(),
+  query: z.string().nullable().optional(),
+  scope: z.object({
+    tickerCount: z.number().int().nonnegative(),
+    requestedTopics: z.array(footnoteTopicSchema).default([]),
+    dateFrom: z.string().nullable().optional(),
+    dateTo: z.string().nullable().optional(),
+    window: z.string().nullable().optional(),
+    filingsPerTicker: z.number().int().positive(),
+    filingBudget: z.number().int().positive(),
+    filingsRendered: z.number().int().nonnegative(),
+    concurrency: z.number().int().positive(),
+  }),
+  tickers: z.array(footnoteTickerResultSchema).default([]),
   summaryMd: z.string(),
   ...investorMetadataShape,
 })
@@ -1688,6 +1912,7 @@ export type MacroRequestTemplateMetadata = z.infer<typeof macroRequestTemplateMe
 export type MacroSourcePlanStep = z.infer<typeof macroSourcePlanStepSchema>
 export type MacroSourcePlan = z.infer<typeof macroSourcePlanSchema>
 export type MacroHighSignalSeries = z.infer<typeof macroHighSignalSeriesSchema>
+export type MacroHighSignalCompactSeries = z.infer<typeof macroHighSignalCompactSeriesSchema>
 export type MacroHighSignalPack = z.infer<typeof macroHighSignalPackSchema>
 export type FactorDefinition = z.infer<typeof factorDefinitionSchema>
 export type FactorReturn = z.infer<typeof factorReturnSchema>
@@ -1725,6 +1950,9 @@ export type FootnoteTopic = z.infer<typeof footnoteTopicSchema>
 export type FootnoteIntelligenceRequest = z.infer<typeof footnoteIntelligenceRequestSchema>
 export type FootnoteTopicMatch = z.infer<typeof footnoteTopicMatchSchema>
 export type FootnoteIntelligenceResult = z.infer<typeof footnoteIntelligenceResultSchema>
+export type FootnoteFilingResult = z.infer<typeof footnoteFilingResultSchema>
+export type FootnoteTickerResult = z.infer<typeof footnoteTickerResultSchema>
+export type FootnoteIntelligenceCollection = z.infer<typeof footnoteIntelligenceCollectionSchema>
 export type IntelligenceIntent = z.infer<typeof intelligenceIntentSchema>
 export type IntelligenceQueryRequest = z.infer<typeof intelligenceQueryRequestSchema>
 export type IntelligenceQueryResponse = z.infer<typeof intelligenceQueryResponseSchema>

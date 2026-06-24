@@ -45,6 +45,16 @@ import {
   billingPortalSessionSchema,
   billingBudgetSchema,
   dashboardOverviewSchema,
+  dashboardAccountSettingsSchema,
+  accountUpdateDashboardProfileBodySchema,
+  accountUpdateDashboardOrganizationBodySchema,
+  accountUpdateDashboardAppearanceBodySchema,
+  accountRequestDeletionBodySchema,
+  dashboardUsageSeriesSchema,
+  dashboardEndpointBreakdownSchema,
+  dashboardUsageRequestLogSchema,
+  dashboardUsageExportSchema,
+  dashboardUsageActivitySchema,
   webhookEndpointSchema,
   webhookDeliveryAttemptSchema,
   streamSubscriptionSchema,
@@ -57,6 +67,7 @@ import {
   modelFactorAnalysisSchema,
   responseViewSchema,
 } from "./generated-contracts/index.js"
+import type { Entity, Filing, Section } from "./generated-contracts/index.js"
 import type { z } from "zod"
 
 /**
@@ -68,7 +79,7 @@ export type ResponseView = z.infer<typeof responseViewSchema>
 
 const DEFAULT_BASE_URL = "https://api.secapi.ai"
 const DEFAULT_API_VERSION = "2026-03-19"
-export const SDK_VERSION = "0.5.0"
+export const SDK_VERSION = "1.0.0"
 const POSTHOG_CAPTURE_HOST = "https://us.i.posthog.com"
 
 const SAFE_RETRY_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
@@ -81,6 +92,38 @@ const DEFAULT_RETRY_CONFIG = {
   totalBudgetMs: 30_000,
   circuitBreakerFailureThreshold: 5,
   circuitBreakerCooldownMs: 60_000,
+}
+
+type RuntimeProcess = {
+  env?: Record<string, string | undefined>
+}
+
+function runtimeEnv(name: string): string | undefined {
+  const processLike = (globalThis as { process?: RuntimeProcess }).process
+  const value = processLike?.env?.[name]?.trim()
+  return value || undefined
+}
+
+function firstRuntimeEnv(...names: string[]): string | undefined {
+  for (const name of names) {
+    const value = runtimeEnv(name)
+    if (value) return value
+  }
+  return undefined
+}
+
+function normalizedOption(value: string | undefined): string | undefined {
+  const trimmed = value?.trim()
+  return trimmed || undefined
+}
+
+function resolveClientOptions(options: SecApiClientOptions): SecApiClientOptions {
+  return {
+    ...options,
+    apiKey: normalizedOption(options.apiKey) ?? firstRuntimeEnv("SECAPI_API_KEY", "OMNI_DATASTREAM_API_KEY"),
+    bearerToken: normalizedOption(options.bearerToken) ?? firstRuntimeEnv("SECAPI_BEARER_TOKEN", "OMNI_DATASTREAM_BEARER_TOKEN"),
+    baseUrl: normalizedOption(options.baseUrl) ?? firstRuntimeEnv("SECAPI_BASE_URL", "SECAPI_API_BASE_URL", "OMNI_DATASTREAM_BASE_URL", "OMNI_DATASTREAM_API_BASE_URL"),
+  }
 }
 
 export type SecApiClientOptions = {
@@ -130,6 +173,13 @@ export type JsonValue =
 
 export type RequestParams<T extends Record<string, unknown>> = T & RequestOptions
 
+export type PaginationOptions<T = unknown> = {
+  maxPages?: number
+  maxItems?: number
+  getItems?: (page: unknown) => readonly T[]
+  getNextCursor?: (page: unknown) => string | number | null | undefined
+}
+
 export type FactorApiResponseMode = "compact" | "standard" | "verbose"
 
 type FactorResponseControls = {
@@ -143,6 +193,10 @@ type FactorKeySelection = FactorResponseControls & {
   category?: string
   window?: string
   lookback?: string
+}
+
+type FactorCatalogParams = FactorKeySelection & {
+  limit?: number
 }
 
 type FactorBulkDownloadParams = FactorKeySelection & {
@@ -337,8 +391,13 @@ export type DashboardUsageExportParams = DashboardUsageRequestLogParams & {
 export type DashboardUsageExportCsvParams = DashboardUsageRequestLogParams
 
 export type DashboardUsageActivityParams = DashboardUsageWindowParams & {
+  requestLimit?: number
   auditLimit?: number
 }
+
+export type DashboardAppearanceUpdate = z.infer<typeof accountUpdateDashboardAppearanceBodySchema>
+export type DashboardProfileUpdate = z.infer<typeof accountUpdateDashboardProfileBodySchema>
+export type DashboardOrganizationUpdate = z.infer<typeof accountUpdateDashboardOrganizationBodySchema>
 
 type ParsedResponse = {
   payload: unknown
@@ -486,6 +545,38 @@ function buildUrl(path: string, params?: Record<string, unknown>) {
   return search.size > 0 ? `${url.pathname}?${search.toString()}` : url.pathname
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value))
+}
+
+function defaultPageItems<T>(page: unknown): readonly T[] {
+  if (!isRecord(page)) return []
+  for (const key of ["data", "items", "results", "sections", "filings"]) {
+    const value = page[key]
+    if (Array.isArray(value)) return value as T[]
+  }
+  return []
+}
+
+function defaultNextCursor(page: unknown): string | number | null | undefined {
+  if (!isRecord(page)) return null
+  if (page.hasMore === false || page.has_more === false) return null
+  return (page.nextCursor as string | number | null | undefined)
+    ?? (page.next_cursor as string | number | null | undefined)
+}
+
+function normalizeCursor(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+  const cursor = String(value).trim()
+  return cursor || null
+}
+
+function positiveIntegerOrInfinity(value: number | undefined): number {
+  if (value === undefined) return Number.POSITIVE_INFINITY
+  if (!Number.isFinite(value)) return Number.POSITIVE_INFINITY
+  return Math.max(0, Math.floor(value))
+}
+
 function withRequiredInclude<T extends Record<string, unknown>>(params: T, required: string): T {
   const existing = params.include
   const includes = Array.isArray(existing)
@@ -620,27 +711,48 @@ function routeTemplate(path: string) {
     .join("/")
 }
 
-function extractRequestId(payload: unknown): string | undefined {
+function objectStringField(payload: unknown, keys: string[]): string | undefined {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined
-  const value = (payload as Record<string, unknown>).requestId
-  return typeof value === "string" && value.trim() ? value.trim() : undefined
+  for (const key of keys) {
+    const value = (payload as Record<string, unknown>)[key]
+    if (typeof value === "string" && value.trim()) return value.trim()
+  }
+  return undefined
+}
+
+function nestedErrorStringField(payload: unknown, keys: string[]): string | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined
+  return objectStringField((payload as Record<string, unknown>).error, keys)
+}
+
+function nestedErrorDataStringField(payload: unknown, keys: string[]): string | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined
+  const error = (payload as Record<string, unknown>).error
+  if (!error || typeof error !== "object" || Array.isArray(error)) return undefined
+  return objectStringField((error as Record<string, unknown>).data, keys)
+}
+
+function extractRequestId(payload: unknown): string | undefined {
+  return objectStringField(payload, ["requestId", "request_id"])
 }
 
 function extractErrorCode(payload: unknown): string | undefined {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined
-  const value = (payload as Record<string, unknown>).code
-  return typeof value === "string" && value.trim() ? value.trim() : undefined
+  return objectStringField(payload, ["code", "errorCode", "error_code"])
+    ?? nestedErrorDataStringField(payload, ["code", "errorCode", "error_code", "type"])
+    ?? nestedErrorStringField(payload, ["code", "errorCode", "error_code", "type"])
 }
 
 function buildErrorMessage(status: number, requestId: string | undefined, payload: unknown) {
   const message =
-    payload && typeof payload === "object" && !Array.isArray(payload) && typeof (payload as Record<string, unknown>).message === "string"
-      ? String((payload as Record<string, unknown>).message)
-      : payload && typeof payload === "object" && !Array.isArray(payload) && typeof (payload as Record<string, unknown>).error === "string"
-        ? String((payload as Record<string, unknown>).error)
-      : typeof payload === "string" && payload.trim()
+    objectStringField(payload, ["message"])
+    ?? objectStringField(payload, ["error"])
+    ?? objectStringField(payload, ["detail", "title"])
+    ?? nestedErrorDataStringField(payload, ["message", "detail", "title"])
+    ?? nestedErrorStringField(payload, ["message", "detail", "title"])
+    ?? (typeof payload === "string" && payload.trim()
         ? payload.trim()
-        : `SEC API request failed with status ${status}`
+        : undefined)
+    ?? `SEC API request failed with status ${status}`
 
   return requestId ? `${message} (request_id: ${requestId})` : message
 }
@@ -652,7 +764,53 @@ export class SecApiClient {
   )
   private readonly telemetryDistinctId = randomId()
 
-  constructor(private readonly options: SecApiClientOptions = {}) {}
+  private readonly options: SecApiClientOptions
+
+  constructor(options: SecApiClientOptions = {}) {
+    this.options = resolveClientOptions(options)
+  }
+
+  readonly entities = {
+    resolve: (...args: Parameters<SecApiClient["resolveEntity"]>) => this.resolveEntity(...args),
+    search: (...args: Parameters<SecApiClient["searchEntities"]>) => this.searchEntities(...args),
+    paginate: (...args: Parameters<SecApiClient["paginateEntities"]>) => this.paginateEntities(...args),
+  }
+
+  readonly filings = {
+    search: (...args: Parameters<SecApiClient["searchFilings"]>) => this.searchFilings(...args),
+    latest: (...args: Parameters<SecApiClient["latestFiling"]>) => this.latestFiling(...args),
+    agentLatest: (...args: Parameters<SecApiClient["agentLatestFiling"]>) => this.agentLatestFiling(...args),
+    renderLatest: (...args: Parameters<SecApiClient["renderLatestFiling"]>) => this.renderLatestFiling(...args),
+    byAccession: (...args: Parameters<SecApiClient["filingByAccession"]>) => this.filingByAccession(...args),
+    paginate: (...args: Parameters<SecApiClient["paginateFilings"]>) => this.paginateFilings(...args),
+  }
+
+  readonly sections = {
+    search: (...args: Parameters<SecApiClient["searchSections"]>) => this.searchSections(...args),
+    latest: (...args: Parameters<SecApiClient["latestSection"]>) => this.latestSection(...args),
+    agentLatest: (...args: Parameters<SecApiClient["agentSection"]>) => this.agentSection(...args),
+    byAccession: (...args: Parameters<SecApiClient["filingSectionByAccession"]>) => this.filingSectionByAccession(...args),
+    paginate: (...args: Parameters<SecApiClient["paginateSections"]>) => this.paginateSections(...args),
+  }
+
+  readonly search = {
+    fulltext: (...args: Parameters<SecApiClient["searchFulltext"]>) => this.searchFulltext(...args),
+    semantic: (...args: Parameters<SecApiClient["semanticSearch"]>) => this.semanticSearch(...args),
+  }
+
+  readonly factors = {
+    catalog: (...args: Parameters<SecApiClient["factorCatalog"]>) => this.factorCatalog(...args),
+    returns: (...args: Parameters<SecApiClient["factorReturns"]>) => this.factorReturns(...args),
+    history: (...args: Parameters<SecApiClient["factorHistory"]>) => this.factorHistory(...args),
+    historyCsv: (...args: Parameters<SecApiClient["factorHistoryCsv"]>) => this.factorHistoryCsv(...args),
+    dashboard: (...args: Parameters<SecApiClient["factorDashboard"]>) => this.factorDashboard(...args),
+    screen: (...args: Parameters<SecApiClient["factorScreen"]>) => this.factorScreen(...args),
+    valuations: (...args: Parameters<SecApiClient["factorValuations"]>) => this.factorValuations(...args),
+    exposures: (...args: Parameters<SecApiClient["factorExposures"]>) => this.factorExposures(...args),
+    decomposition: (...args: Parameters<SecApiClient["factorDecomposition"]>) => this.factorDecomposition(...args),
+    relatedStocks: (...args: Parameters<SecApiClient["factorRelatedStocks"]>) => this.factorRelatedStocks(...args),
+    similarityPack: (...args: Parameters<SecApiClient["factorSimilarityPack"]>) => this.factorSimilarityPack(...args),
+  }
 
   get baseUrl() {
     return (this.options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "")
@@ -698,6 +856,7 @@ export class SecApiClient {
     const contentType = response.headers.get("content-type") ?? ""
     const responseRequestId =
       response.headers.get("Request-Id") ??
+      response.headers.get("X-Request-Id") ??
       response.headers.get("X-Correlation-Id") ??
       undefined
 
@@ -922,6 +1081,70 @@ export class SecApiClient {
     return this.request("/v1/dashboard/overview", {}, undefined, options)
   }
 
+  async dashboardSettings(options?: RequestOptions) {
+    return this.request("/v1/dashboard/settings", {}, dashboardAccountSettingsSchema, options)
+  }
+
+  async updateDashboardAppearance(body: DashboardAppearanceUpdate, options?: RequestOptions) {
+    return this.request("/v1/dashboard/settings/appearance", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(accountUpdateDashboardAppearanceBodySchema.parse(body)),
+    }, dashboardAccountSettingsSchema, options)
+  }
+
+  async updateDashboardProfile(body: DashboardProfileUpdate, options?: RequestOptions) {
+    return this.request("/v1/dashboard/settings/profile", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(accountUpdateDashboardProfileBodySchema.parse(body)),
+    }, dashboardAccountSettingsSchema, options)
+  }
+
+  async updateDashboardOrganization(body: DashboardOrganizationUpdate, options?: RequestOptions) {
+    return this.request("/v1/dashboard/settings/organization", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(accountUpdateDashboardOrganizationBodySchema.parse(body)),
+    }, dashboardAccountSettingsSchema, options)
+  }
+
+  async requestDashboardAccountDeletion(body: { reason?: string | null } = {}, options?: RequestOptions) {
+    return this.request("/v1/dashboard/settings/account-deletion-request", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(accountRequestDeletionBodySchema.parse(body)),
+    }, dashboardAccountSettingsSchema, options)
+  }
+
+  async dashboardUsageSeries(params: RequestParams<DashboardUsageSeriesParams> = {}) {
+    return this.get("/v1/dashboard/usage/series", params, dashboardUsageSeriesSchema)
+  }
+
+  async dashboardUsageEndpoints(params: RequestParams<DashboardUsageWindowParams> = {}) {
+    return this.get("/v1/dashboard/usage/endpoints", params, dashboardEndpointBreakdownSchema)
+  }
+
+  async dashboardUsageRequests(params: RequestParams<DashboardUsageRequestLogParams> = {}) {
+    return this.get("/v1/dashboard/usage/requests", params, dashboardUsageRequestLogSchema)
+  }
+
+  async dashboardUsageExport(params: RequestParams<DashboardUsageExportParams> = {}) {
+    return this.get("/v1/dashboard/usage/export", { ...params, format: "json" }, dashboardUsageExportSchema)
+  }
+
+  async dashboardUsageExportCsv(params: RequestParams<DashboardUsageExportCsvParams> = {}) {
+    return this.get<string>("/v1/dashboard/usage/export", { ...params, format: "csv" })
+  }
+
+  async dashboardActivity(params: RequestParams<DashboardUsageActivityParams> = {}) {
+    const { requestLimit, ...rest } = params
+    const query = requestLimit === undefined || rest.limit !== undefined
+      ? rest
+      : { ...rest, limit: requestLimit }
+    return this.get("/v1/dashboard/activity", query, dashboardUsageActivitySchema)
+  }
+
   async listApiKeys(options?: RequestOptions) {
     return this.request("/v1/api_keys", {}, undefined, options)
   }
@@ -949,7 +1172,8 @@ export class SecApiClient {
   }
 
   async requestDiagnostics(requestId: string, options?: RequestOptions) {
-    return this.request(`/v1/diagnostics/requests/${requestId}`, {}, undefined, options)
+    const encodedRequestId = encodeURIComponent(requestId)
+    return this.request(`/v1/diagnostics/requests/${encodedRequestId}`, {}, undefined, options)
   }
 
   async listAdminOrganizations(params: RequestParams<{ q?: string; limit?: number }> = {}) {
@@ -957,15 +1181,15 @@ export class SecApiClient {
   }
 
   async getAdminOrganization(orgId: string, params: RequestParams<{ limit?: number }> = {}) {
-    return this.get(`/v1/admin/orgs/${orgId}`, params)
+    return this.get(`/v1/admin/orgs/${encodeURIComponent(orgId)}`, params)
   }
 
   async getAdminRequestDiagnostics(orgId: string, requestId: string, options?: RequestOptions) {
-    return this.request(`/v1/admin/orgs/${orgId}/requests/${requestId}`, {}, undefined, options)
+    return this.request(`/v1/admin/orgs/${encodeURIComponent(orgId)}/requests/${encodeURIComponent(requestId)}`, {}, undefined, options)
   }
 
   async getAdminDeliverySummary(orgId: string, params: RequestParams<{ since?: string; limit?: number }> = {}) {
-    return this.get(`/v1/admin/orgs/${orgId}/deliveries/summary`, params)
+    return this.get(`/v1/admin/orgs/${encodeURIComponent(orgId)}/deliveries/summary`, params)
   }
 
   async deliverySummary(params: RequestParams<{ since?: string; limit?: number }> = {}) {
@@ -1088,17 +1312,17 @@ export class SecApiClient {
   }
 
   async rotateWebhookEndpointSecret(webhookId: string, options?: RequestOptions) {
-    return this.request(`/v1/webhook_endpoints/${webhookId}/rotate_secret`, {
+    return this.request(`/v1/webhook_endpoints/${encodeURIComponent(webhookId)}/rotate_secret`, {
       method: "POST",
     }, undefined, options)
   }
 
   async listWebhookDeliveries(webhookId: string, params: RequestParams<{ eventId?: string; limit?: number }> = {}) {
-    return this.get(`/v1/webhook_endpoints/${webhookId}/deliveries`, params)
+    return this.get(`/v1/webhook_endpoints/${encodeURIComponent(webhookId)}/deliveries`, params)
   }
 
   async replayWebhookDelivery(webhookId: string, deliveryId: string, options?: RequestOptions) {
-    return this.request(`/v1/webhook_endpoints/${webhookId}/deliveries/${deliveryId}/replay`, {
+    return this.request(`/v1/webhook_endpoints/${encodeURIComponent(webhookId)}/deliveries/${encodeURIComponent(deliveryId)}/replay`, {
       method: "POST",
     }, undefined, options)
   }
@@ -1108,7 +1332,7 @@ export class SecApiClient {
   }
 
   async createStreamSubscription(
-    body: { description?: string; eventTypes?: string[]; transport?: "poll" | "webhook_mirror"; livemode?: boolean },
+    body: { description?: string; eventTypes?: string[]; transport?: "poll" | "webhook_mirror" | "websocket"; livemode?: boolean },
     options?: RequestOptions,
   ) {
     return this.request("/v1/stream_subscriptions", {
@@ -1119,11 +1343,51 @@ export class SecApiClient {
   }
 
   async streamEvents(streamId: string, params: RequestParams<{ cursor?: string; type?: string; limit?: number }> = {}) {
-    return this.get(`/v1/stream_subscriptions/${streamId}/events`, params)
+    return this.get(`/v1/stream_subscriptions/${encodeURIComponent(streamId)}/events`, params)
+  }
+
+  async *paginate<T = unknown, P extends RequestParams<Record<string, unknown>> = RequestParams<Record<string, unknown>>>(
+    fetchPage: (params: P) => Promise<unknown>,
+    params: P,
+    options: PaginationOptions<T> = {},
+  ): AsyncGenerator<T> {
+    const maxPages = positiveIntegerOrInfinity(options.maxPages)
+    const maxItems = positiveIntegerOrInfinity(options.maxItems)
+    if (maxPages === 0 || maxItems === 0) return
+
+    const getItems = options.getItems ?? defaultPageItems<T>
+    const getNextCursor = options.getNextCursor ?? defaultNextCursor
+    let pageParams = { ...params }
+    const seenCursors = new Set<string>()
+    const initialCursor = normalizeCursor((pageParams as Record<string, unknown>).cursor)
+    if (initialCursor) seenCursors.add(initialCursor)
+
+    let yielded = 0
+    for (let pageCount = 0; pageCount < maxPages; pageCount += 1) {
+      const page = await fetchPage(pageParams)
+      let pageItemCount = 0
+      for (const item of getItems(page)) {
+        if (yielded >= maxItems) return
+        pageItemCount += 1
+        yield item
+        yielded += 1
+      }
+      if (yielded >= maxItems) return
+
+      const nextCursor = normalizeCursor(getNextCursor(page))
+      if (!nextCursor) return
+      if (seenCursors.has(nextCursor)) {
+        throw new Error(`SEC API pagination cursor repeated: ${nextCursor}`)
+      }
+      if (pageItemCount === 0) return
+      seenCursors.add(nextCursor)
+      pageParams = { ...pageParams, cursor: nextCursor }
+    }
   }
 
   async resolveEntity(params: RequestParams<{
     ticker?: string
+    symbol?: string
     cik?: string
     figi?: string
     composite_figi?: string
@@ -1131,6 +1395,9 @@ export class SecApiClient {
     isin?: string
     cusip?: string
     name?: string
+    query?: string
+    q?: string
+    view?: ResponseView
   }>) {
     return this.get("/v1/entities/resolve", params)
   }
@@ -1141,7 +1408,8 @@ export class SecApiClient {
   }
 
   async getTrace(traceId: string, options?: RequestOptions) {
-    return this.request(`/v1/traces/${traceId}`, {}, undefined, options)
+    const encodedTraceId = encodeURIComponent(traceId)
+    return this.request(`/v1/traces/${encodedTraceId}`, {}, undefined, options)
   }
 
   async analyticsQuery(body: {
@@ -1164,8 +1432,16 @@ export class SecApiClient {
     return this.get("/v1/entities", params)
   }
 
+  paginateEntities(
+    params: RequestParams<{ q?: string; entity_type?: string; cursor?: string; limit?: number }> = {},
+    options: PaginationOptions<Entity> = {},
+  ) {
+    return this.paginate<Entity>((pageParams) => this.searchEntities(pageParams), params, options)
+  }
+
   async searchFilings(params: RequestParams<{
     ticker?: string
+    symbol?: string
     cik?: string
     form?: string
     forms?: string | string[]
@@ -1180,32 +1456,52 @@ export class SecApiClient {
     return this.get("/v1/filings", params)
   }
 
-  async filingByAccession(accessionNumber: string, params: RequestParams<{ ticker?: string; cik?: string; form?: string }> = {}) {
-    return this.get(`/v1/filings/${accessionNumber}`, params)
+  paginateFilings(
+    params: RequestParams<{
+      ticker?: string
+      symbol?: string
+      cik?: string
+      form?: string
+      forms?: string | string[]
+      accession_number?: string
+      q?: string
+      date_from?: string
+      date_to?: string
+      sort?: "filing_date_desc" | "filing_date_asc"
+      cursor?: string
+      limit?: number
+    }> = {},
+    options: PaginationOptions<Filing> = {},
+  ) {
+    return this.paginate<Filing>((pageParams) => this.searchFilings(pageParams), params, options)
   }
 
-  async latestFiling(params: RequestParams<{ ticker?: string; cik?: string; form?: string }>) {
+  async filingByAccession(accessionNumber: string, params: RequestParams<{ ticker?: string; cik?: string; form?: string }> = {}) {
+    return this.get(`/v1/filings/${encodeURIComponent(accessionNumber)}`, params)
+  }
+
+  async latestFiling(params: RequestParams<{ ticker?: string; symbol?: string; cik?: string; form?: string }>) {
     return this.get("/v1/filings/latest", params)
   }
 
-  async agentLatestFiling(params: RequestParams<{ ticker?: string; cik?: string; form?: string }>) {
-    return this.latestFiling({ ...params, view: "agent" } as RequestParams<{ ticker?: string; cik?: string; form?: string; view: "agent" }>)
+  async agentLatestFiling(params: RequestParams<{ ticker?: string; symbol?: string; cik?: string; form?: string }>) {
+    return this.latestFiling({ ...params, view: "agent" } as RequestParams<{ ticker?: string; symbol?: string; cik?: string; form?: string; view: "agent" }>)
   }
 
-  async renderLatestFiling(params: RequestParams<{ ticker?: string; cik?: string; form?: string }>) {
+  async renderLatestFiling(params: RequestParams<{ ticker?: string; symbol?: string; cik?: string; form?: string }>) {
     return this.get("/v1/filings/latest/render", params)
   }
 
-  async latestSection(params: RequestParams<{ ticker?: string; cik?: string; form?: string; sectionKey: string; mode?: "compact" | "full" }>) {
+  async latestSection(params: RequestParams<{ ticker?: string; symbol?: string; cik?: string; form?: string; sectionKey: string; filing_year?: number; mode?: "compact" | "full"; view?: ResponseView }>) {
     const { sectionKey, ...rest } = params
-    return this.get(`/v1/filings/latest/sections/${sectionKey}`, rest)
+    return this.get(`/v1/filings/latest/sections/${encodeURIComponent(sectionKey)}`, rest)
   }
 
-  async agentSection(params: RequestParams<{ ticker?: string; cik?: string; form?: string; sectionKey: string; filing_year?: number }>) {
-    return this.latestSection({ ...params, mode: "compact" })
+  async agentSection(params: RequestParams<{ ticker?: string; symbol?: string; cik?: string; form?: string; sectionKey: string; filing_year?: number }>) {
+    return this.latestSection({ ...params, view: "agent" })
   }
 
-  async latestRiskCategories(params: RequestParams<{ ticker?: string; cik?: string; form?: string }> = {}) {
+  async latestRiskCategories(params: RequestParams<{ ticker?: string; symbol?: string; cik?: string; form?: string }> = {}) {
     return this.get("/v1/filings/latest/risk-categories", params)
   }
 
@@ -1219,43 +1515,90 @@ export class SecApiClient {
 
   async filingSectionByAccession(
     accessionNumber: string,
-    params: RequestParams<{ sectionKey: string; ticker?: string; cik?: string; form?: string }>,
+    params: RequestParams<{ sectionKey: string; ticker?: string; cik?: string; form?: string; mode?: "compact" | "full" }>,
   ) {
     const { sectionKey, ...rest } = params
-    return this.get(`/v1/filings/${accessionNumber}/sections/${sectionKey}`, rest)
+    return this.get(`/v1/filings/${encodeURIComponent(accessionNumber)}/sections/${encodeURIComponent(sectionKey)}`, rest)
   }
 
-  async searchSections(params: RequestParams<{ ticker?: string; cik?: string; form?: string; filing_id?: string; q?: string; cursor?: string; limit?: number }>) {
+  async searchSections(params: RequestParams<{ ticker?: string; symbol?: string; cik?: string; form?: string; filing_id?: string; q?: string; cursor?: string; limit?: number }>) {
     return this.get("/v1/sections/search", params)
   }
 
-  async semanticSearch(params: RequestParams<{ q: string; ticker?: string; cik?: string; form?: string; filing_year?: number; mode?: "keyword" | "semantic" | "hybrid"; cursor?: string; limit?: number; view?: ResponseView }>) {
+  paginateSections(
+    params: RequestParams<{ ticker?: string; symbol?: string; cik?: string; form?: string; filing_id?: string; q?: string; cursor?: string; limit?: number }>,
+    options: PaginationOptions<Section> = {},
+  ) {
+    return this.paginate<Section>((pageParams) => this.searchSections(pageParams), params, options)
+  }
+
+  async semanticSearch(params: RequestParams<{ q: string; ticker?: string; symbol?: string; cik?: string; form?: string; filing_year?: number; mode?: "keyword" | "semantic" | "hybrid"; cursor?: string; limit?: number; view?: ResponseView }>) {
     return this.get("/v1/search/semantic", params)
   }
 
-  async searchFulltext(params: RequestParams<{ q: string; ticker?: string; cik?: string; form?: string; limit?: number }>) {
+  async searchFulltext(params: RequestParams<{
+    q: string
+    ticker?: string
+    symbol?: string
+    cik?: string
+    form?: string
+    formType?: string
+    accession_number?: string
+    accessionNumber?: string
+    filing_year?: number
+    fy?: number
+    year?: number
+    date_from?: string
+    date_to?: string
+    dateFrom?: string
+    dateTo?: string
+    limit?: number
+  }>) {
     return this.get("/v1/search/fulltext", params)
   }
 
   async segmentedRevenues(
-    params: RequestParams<{ ticker?: string; cik?: string; period?: "annual" | "quarterly"; segment_type?: "geographic" | "product" | "other"; limit?: number }> = {},
+    params: RequestParams<{
+      ticker?: string
+      symbol?: string
+      cik?: string
+      period?: "annual" | "quarterly" | "quarter" | "q"
+      segment_type?: "geographic" | "product" | "other"
+      limit?: number
+      segment_limit?: number
+      segmentLimit?: number
+      submission_file_limit?: number
+      submissionFileLimit?: number
+    }> = {},
   ) {
     return this.get("/v1/statements/segmented-revenues", params)
   }
 
   async segmentedFacts(
-    params: RequestParams<{ ticker?: string; cik?: string; metric: "revenue" | "profit_loss"; period?: "annual" | "quarterly"; segment_type?: "geographic" | "product" | "other"; limit?: number; submission_file_limit?: number }> ,
+    params: RequestParams<{
+      ticker?: string
+      symbol?: string
+      cik?: string
+      metric: "revenue" | "profit_loss"
+      period?: "annual" | "quarterly" | "quarter" | "q"
+      segment_type?: "geographic" | "product" | "other"
+      limit?: number
+      segment_limit?: number
+      segmentLimit?: number
+      submission_file_limit?: number
+      submissionFileLimit?: number
+    }>,
   ) {
     return this.get("/v1/statements/segmented-facts", params)
   }
 
   async pensionBenefitSchedule(
-    params: RequestParams<{ ticker?: string; cik?: string; filing_year: number; target_year: number; form?: string; accession_number?: string }>,
+    params: RequestParams<{ ticker?: string; symbol?: string; cik?: string; filing_year: number; target_year: number; form?: string; accession_number?: string }>,
   ) {
     return this.get("/v1/filings/pension-benefit-schedule", params)
   }
 
-  async shareFloat(params: RequestParams<{ ticker?: string; cik?: string }> = {}) {
+  async shareFloat(params: RequestParams<{ ticker?: string; symbol?: string; cik?: string }> = {}) {
     return this.get("/v1/statements/share-float", params)
   }
 
@@ -1270,7 +1613,7 @@ export class SecApiClient {
   }
 
   async enforcementActions(
-    params: RequestParams<{ query?: string; source_type?: "litigation_release" | "administrative_proceeding"; date_from?: string; date_to?: string; cursor?: string; limit?: number; view?: ResponseView }> = {},
+    params: RequestParams<{ query?: string; source_type?: "litigation_release" | "administrative_proceeding" | "aaer"; date_from?: string; date_to?: string; cursor?: string; limit?: number; view?: ResponseView }> = {},
   ) {
     return this.get("/v1/events/enforcement", params)
   }
@@ -1336,7 +1679,7 @@ export class SecApiClient {
   }
 
   async dilutionRatings(
-    params: RequestParams<{ ticker?: string; overall_risk?: "low" | "medium" | "high" | "extreme"; cursor?: string; limit?: number; view?: ResponseView }> = {},
+    params: RequestParams<{ ticker?: string; overall_risk?: "low" | "moderate" | "elevated" | "high"; cursor?: string; limit?: number; view?: ResponseView }> = {},
   ) {
     return this.get("/v1/dilution/ratings", params)
   }
@@ -1431,7 +1774,7 @@ export class SecApiClient {
     return this.get("/v1/macro/forecasts", params)
   }
 
-  async macroHighSignalPack(params: RequestParams<{ country?: string }> = {}) {
+  async macroHighSignalPack(params: RequestParams<{ country?: string; include?: "series"; response_mode?: "compact" | "standard" }> = {}) {
     return this.get("/v1/macro/high-signal-pack", params)
   }
 
@@ -1439,7 +1782,7 @@ export class SecApiClient {
     return this.get("/v1/macro/regimes", params)
   }
 
-  async factorCatalog(params: RequestParams<FactorKeySelection> = {}) {
+  async factorCatalog(params: RequestParams<FactorCatalogParams> = {}) {
     return this.get("/v1/factors/catalog", params)
   }
 
@@ -1715,30 +2058,55 @@ export class SecApiClient {
     return this.get("/v1/signals/volatility", params)
   }
 
-  async facts(params: RequestParams<{ ticker?: string; cik?: string; taxonomy?: string; tag: string; unit?: string; form?: string; limit?: number }>) {
+  async facts(params: RequestParams<{
+    ticker?: string
+    symbol?: string
+    cik?: string
+    taxonomy?: string
+    tag?: string
+    unit?: string
+    form?: string
+    formType?: string
+    period?: "annual" | "quarterly" | "quarter" | "q"
+    fy?: number
+    year?: number
+    fy_from?: number
+    fyFrom?: number
+    fy_to?: number
+    fyTo?: number
+    limit?: number
+    include?: string
+    include_geographic_segments?: boolean
+    geographic_segments?: boolean
+    segment_limit?: number
+    segmentLimit?: number
+    submission_file_limit?: number
+    submissionFileLimit?: number
+    view?: "default" | "agent"
+  }>) {
     return this.get("/v1/facts", params)
   }
 
   async statements(
-    params: RequestParams<{ ticker?: string; cik?: string; statement?: string; period?: "annual" | "quarterly"; limit?: number; view?: ResponseView }>,
+    params: RequestParams<{ ticker?: string; symbol?: string; cik?: string; statement?: string; period?: "annual" | "quarterly"; limit?: number; view?: ResponseView }>,
   ) {
     return this.get("/v1/statements", params)
   }
 
-  async allStatements(params: RequestParams<{ ticker?: string; cik?: string; period?: "annual" | "quarterly"; limit?: number }>) {
+  async allStatements(params: RequestParams<{ ticker?: string; symbol?: string; cik?: string; period?: "annual" | "quarterly"; limit?: number }>) {
     return this.get("/v1/statements/all", params)
   }
 
   async statementByKey(
     statementKey: string,
-    params: RequestParams<{ ticker?: string; cik?: string; period?: "annual" | "quarterly"; limit?: number; view?: ResponseView }>,
+    params: RequestParams<{ ticker?: string; symbol?: string; cik?: string; period?: "annual" | "quarterly"; limit?: number; view?: ResponseView }>,
   ) {
-    return this.get(`/v1/statements/${statementKey}`, params)
+    return this.get(`/v1/statements/${encodeURIComponent(statementKey)}`, params)
   }
 
   async agentStatement(
     statementKey: string,
-    params: RequestParams<{ ticker?: string; cik?: string; period?: "annual" | "quarterly"; limit?: number }>,
+    params: RequestParams<{ ticker?: string; symbol?: string; cik?: string; period?: "annual" | "quarterly"; limit?: number }>,
   ) {
     return this.statementByKey(statementKey, { ...params, view: "agent" })
   }
@@ -1854,23 +2222,23 @@ export class SecApiClient {
   }
 
   async getArtifact(artifactId: string, options?: RequestOptions) {
-    return this.request(`/v1/artifacts/${artifactId}`, {}, undefined, options)
+    return this.request(`/v1/artifacts/${encodeURIComponent(artifactId)}`, {}, undefined, options)
   }
 
   async artifactManifest(artifactId: string, options?: RequestOptions) {
-    return this.request(`/v1/artifacts/${artifactId}/manifest`, {}, undefined, options)
+    return this.request(`/v1/artifacts/${encodeURIComponent(artifactId)}/manifest`, {}, undefined, options)
   }
 
   async exportArtifact(artifactId: string, params: RequestParams<{ format?: "json" | "markdown" }> = {}) {
-    return this.get(`/v1/artifacts/${artifactId}/export`, params)
+    return this.get(`/v1/artifacts/${encodeURIComponent(artifactId)}/export`, params)
   }
 
   async downloadArtifact(artifactId: string, options?: RequestOptions) {
-    return this.request(`/v1/artifacts/${artifactId}/download`, {}, undefined, options)
+    return this.request(`/v1/artifacts/${encodeURIComponent(artifactId)}/download`, {}, undefined, options)
   }
 
   async reconcileArtifact(artifactId: string, options?: RequestOptions) {
-    return this.request(`/v1/artifacts/${artifactId}/reconcile`, {
+    return this.request(`/v1/artifacts/${encodeURIComponent(artifactId)}/reconcile`, {
       method: "POST",
     }, undefined, options)
   }

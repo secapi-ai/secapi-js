@@ -183,6 +183,71 @@ describe("SecApiClient retry behavior", () => {
     expect(attempts).toBe(1)
   })
 
+  test("extracts API error diagnostics from top-level aliases", async () => {
+    const client = new SecApiClient({
+      retry: false,
+      telemetry: false,
+      fetch: async () => jsonResponse(400, {
+        error_code: "invalid_request",
+        title: "ticker is required",
+        request_id: "req_alias_123",
+      }),
+    })
+
+    await expect(client.health()).rejects.toMatchObject({
+      name: "SecApiError",
+      status: 400,
+      code: "invalid_request",
+      requestId: "req_alias_123",
+      message: "ticker is required (request_id: req_alias_123)",
+    })
+  })
+
+  test("extracts API error diagnostics from nested error objects", async () => {
+    const client = new SecApiClient({
+      retry: false,
+      telemetry: false,
+      fetch: async () => jsonResponse(502, {
+        requestId: "req_nested_456",
+        error: {
+          code: -32603,
+          message: "JSON-RPC tool error",
+          data: {
+            code: "mcp_tool_failed",
+            message: "hosted tool failed",
+          },
+        },
+      }),
+    })
+
+    await expect(client.callMcpTool("filings.latest", {})).rejects.toMatchObject({
+      name: "SecApiError",
+      status: 502,
+      code: "mcp_tool_failed",
+      requestId: "req_nested_456",
+      message: "hosted tool failed (request_id: req_nested_456)",
+    })
+  })
+
+  test("uses x-request-id header when API error body omits request id", async () => {
+    const client = new SecApiClient({
+      retry: false,
+      telemetry: false,
+      fetch: async () => jsonResponse(
+        429,
+        { errorCode: "rate_limited", message: "retry later" },
+        { "x-request-id": "req_header_789" },
+      ),
+    })
+
+    await expect(client.health()).rejects.toMatchObject({
+      status: 429,
+      code: "rate_limited",
+      requestId: "req_header_789",
+      message: "retry later (request_id: req_header_789)",
+    })
+  })
+
   test("does not retry schema validation failures after successful responses", async () => {
     let attempts = 0
     const { delays, retry } = retryHarness()
@@ -234,17 +299,96 @@ describe("SecApiClient retry behavior", () => {
     expect(seenUrls[0]).not.toContain("retry")
   })
 
-  // QUARANTINED (pre-existing, unrelated to this PR): the dashboard SDK client
-  // methods (dashboardUsage/dashboardActivity/dashboardUsageExport/dashboardSettings/
-  // updateDashboardAppearance/requestDashboardAccountDeletion) exercised by the six
-  // tests below were added to packages/sdk-js/src/index.ts in 8d5075729
-  // (OMNI-4091) alongside these tests, but the src-side additions were lost in a
-  // later merge while the tests remained — so these six fail on origin/main too,
-  // independent of the SDK-republish/MCP-registry work in this PR. Skipping to keep
-  // `bun test` green so the content-parity publish gate (publish-sdks-dispatch.yml)
-  // is not blocked. Re-enable when the dashboard SDK surface is reinstated; tracked
-  // by OMNI-4091.
-  test.skip("dashboard usage helpers serialize dashboard params without request options", async () => {
+  test("getTrace escapes the trace id path segment", async () => {
+    const seenUrls: string[] = []
+    const client = new SecApiClient({
+      telemetry: false,
+      fetch: async (url) => {
+        seenUrls.push(String(url))
+        return jsonResponse(200, { ok: true })
+      },
+    })
+
+    await expect(client.getTrace("trace/with spaces")).resolves.toEqual({ ok: true })
+    expect(seenUrls[0]).toBe("https://api.secapi.ai/v1/traces/trace%2Fwith%20spaces")
+  })
+
+  test("requestDiagnostics escapes the request id path segment", async () => {
+    const seenUrls: string[] = []
+    const client = new SecApiClient({
+      telemetry: false,
+      fetch: async (url) => {
+        seenUrls.push(String(url))
+        return jsonResponse(200, { ok: true })
+      },
+    })
+
+    await expect(client.requestDiagnostics("req/with spaces")).resolves.toEqual({ ok: true })
+    expect(seenUrls[0]).toBe("https://api.secapi.ai/v1/diagnostics/requests/req%2Fwith%20spaces")
+  })
+
+  test("dashboard usage series helper serializes dashboard params without request options", async () => {
+    const seenUrls: string[] = []
+    const client = new SecApiClient({
+      telemetry: false,
+      fetch: async (url) => {
+        seenUrls.push(String(url))
+        return jsonResponse(200, {
+          object: "dashboard_usage_series",
+          requestId: "req_series",
+          orgId: "org_secapi",
+          bucket: "day",
+          since: "2026-06-01T00:00:00.000Z",
+          until: "2026-06-07T00:00:00.000Z",
+          data: [],
+        })
+      },
+    })
+
+    await expect(client.dashboardUsageSeries({
+      bucket: "day",
+      since: "2026-06-01T00:00:00.000Z",
+      until: "2026-06-07T00:00:00.000Z",
+      retry: false,
+    })).resolves.toMatchObject({ object: "dashboard_usage_series" })
+
+    expect(seenUrls).toHaveLength(1)
+    expect(seenUrls[0]).toContain("/v1/dashboard/usage/series?")
+    expect(seenUrls[0]).toContain("bucket=day")
+    expect(seenUrls[0]).not.toContain("retry")
+  })
+
+  test("dashboard usage endpoints helper serializes dashboard params without request options", async () => {
+    const seenUrls: string[] = []
+    const client = new SecApiClient({
+      telemetry: false,
+      fetch: async (url) => {
+        seenUrls.push(String(url))
+        return jsonResponse(200, {
+          object: "dashboard_endpoint_breakdown",
+          requestId: "req_endpoints",
+          orgId: "org_secapi",
+          since: "2026-06-01T00:00:00.000Z",
+          until: "2026-06-07T00:00:00.000Z",
+          data: [],
+        })
+      },
+    })
+
+    await expect(client.dashboardUsageEndpoints({
+      since: "2026-06-01T00:00:00.000Z",
+      until: "2026-06-07T00:00:00.000Z",
+      limit: 10,
+      retry: false,
+    })).resolves.toMatchObject({ object: "dashboard_endpoint_breakdown" })
+
+    expect(seenUrls).toHaveLength(1)
+    expect(seenUrls[0]).toContain("/v1/dashboard/usage/endpoints?")
+    expect(seenUrls[0]).toContain("limit=10")
+    expect(seenUrls[0]).not.toContain("retry")
+  })
+
+  test("dashboard usage helpers serialize dashboard params without request options", async () => {
     const seenUrls: string[] = []
     const client = new SecApiClient({
       telemetry: false,
@@ -278,8 +422,7 @@ describe("SecApiClient retry behavior", () => {
     expect(seenUrls[0]).not.toContain("retry")
   })
 
-  // QUARANTINED — see note above the "dashboard usage helpers" test (OMNI-4091).
-  test.skip("dashboard activity helper validates audit activity responses", async () => {
+  test("dashboard activity helper validates audit activity responses", async () => {
     const seenUrls: string[] = []
     const client = new SecApiClient({
       telemetry: false,
@@ -304,16 +447,16 @@ describe("SecApiClient retry behavior", () => {
       },
     })
 
-    await expect(client.dashboardActivity({ auditLimit: 3, retry: false })).resolves.toMatchObject({
+    await expect(client.dashboardActivity({ requestLimit: 5, auditLimit: 3, retry: false })).resolves.toMatchObject({
       object: "dashboard_usage_activity",
       recentAuditEvents: [],
     })
+    expect(seenUrls[0]).toContain("limit=5")
     expect(seenUrls[0]).toContain("auditLimit=3")
     expect(seenUrls[0]).not.toContain("retry")
   })
 
-  // QUARANTINED — see note above the "dashboard usage helpers" test (OMNI-4091).
-  test.skip("dashboard usage export helpers force their response formats", async () => {
+  test("dashboard usage export helpers force their response formats", async () => {
     const seenUrls: string[] = []
     const seenContentTypes: string[] = []
     const client = new SecApiClient({
@@ -370,13 +513,13 @@ describe("SecApiClient retry behavior", () => {
       },
     })
 
-    await expect(client.factorHistoryCsv("VALUE", { range: "max", retry: false })).resolves.toContain("VALUE")
+    await expect(client.factorHistoryCsv("MKT/US", { range: "max", retry: false })).resolves.toContain("VALUE")
     await expect(client.factorSparklinesCsv({ keys: ["VALUE", "MOMENTUM"], range: "1y", points: 32, retry: false })).resolves.toContain("VALUE")
     await expect(client.factorValuationsCsv({ category: "style", weighting_mode: "short_leg_focus", retry: false })).resolves.toContain("rank,factor_key")
     await expect(client.factorValuationStocksCsv({ factor: "VALUE", side: "winners", retry: false })).resolves.toContain("VALUE")
     await expect(client.factorBulkDownloadCsv({ keys: ["VALUE", "MOMENTUM"], lookback: "12m", retry: false })).resolves.toContain("VALUE")
 
-    expect(seenUrls[0]).toContain("/v1/factors/history/VALUE?")
+    expect(seenUrls[0]).toContain("/v1/factors/history/MKT%2FUS?")
     expect(seenUrls[0]).toContain("range=max")
     expect(seenUrls[0]).toContain("format=csv")
     expect(seenUrls[1]).toContain("/v1/factors/sparklines?")
@@ -399,8 +542,7 @@ describe("SecApiClient retry behavior", () => {
     expect(seenUrls.join("\n")).not.toContain("retry")
   })
 
-  // QUARANTINED — see note above the "dashboard usage helpers" test (OMNI-4091).
-  test.skip("dashboard settings helper rejects invalid response shapes", async () => {
+  test("dashboard settings helper rejects invalid response shapes", async () => {
     const client = new SecApiClient({
       telemetry: false,
       fetch: async () => jsonResponse(200, { object: "not_dashboard_account_settings" }),
@@ -409,20 +551,18 @@ describe("SecApiClient retry behavior", () => {
     await expect(client.dashboardSettings()).rejects.toBeInstanceOf(SecApiValidationError)
   })
 
-  // QUARANTINED — see note above the "dashboard usage helpers" test (OMNI-4091).
-  test.skip("dashboard settings mutation helpers validate body and response", async () => {
-    let seenMethod: string | undefined
-    let seenPath: string | undefined
-    let seenBody: unknown
-    let seenIdempotencyKey: string | null = null
+  test("dashboard settings mutation helpers validate body and response", async () => {
+    const seenRequests: Array<{ method?: string; path: string; body: unknown; idempotencyKey: string | null }> = []
     const client = new SecApiClient({
       telemetry: false,
       fetch: async (url, init) => {
         const parsedUrl = new URL(String(url))
-        seenPath = parsedUrl.pathname
-        seenMethod = init?.method
-        seenBody = JSON.parse(String(init?.body))
-        seenIdempotencyKey = new Headers(init?.headers).get("Idempotency-Key")
+        seenRequests.push({
+          path: parsedUrl.pathname,
+          method: init?.method,
+          body: JSON.parse(String(init?.body)),
+          idempotencyKey: new Headers(init?.headers).get("Idempotency-Key"),
+        })
         return jsonResponse(200, dashboardSettingsPayload({
           appearance: {
             theme: "dark",
@@ -432,6 +572,15 @@ describe("SecApiClient retry behavior", () => {
       },
     })
 
+    await expect(client.updateDashboardOrganization({ name: " " })).rejects.toThrow()
+    expect(seenRequests).toHaveLength(0)
+
+    await expect(client.updateDashboardProfile({ displayName: "DS" })).resolves.toMatchObject({
+      object: "dashboard_account_settings",
+    })
+    await expect(client.updateDashboardOrganization({ name: "SecAPI Labs" })).resolves.toMatchObject({
+      object: "dashboard_account_settings",
+    })
     await expect(client.updateDashboardAppearance(
       { theme: "dark", density: "compact" },
       { retry: { enabled: true, idempotencyKey: "dashboard-appearance-compact" } },
@@ -443,14 +592,29 @@ describe("SecApiClient retry behavior", () => {
       },
     })
 
-    expect(seenPath).toBe("/v1/dashboard/settings/appearance")
-    expect(seenMethod).toBe("PUT")
-    expect(seenBody).toEqual({ theme: "dark", density: "compact" })
-    expect(seenIdempotencyKey).toBe("dashboard-appearance-compact")
+    expect(seenRequests).toEqual([
+      {
+        path: "/v1/dashboard/settings/profile",
+        method: "PATCH",
+        body: { displayName: "DS" },
+        idempotencyKey: null,
+      },
+      {
+        path: "/v1/dashboard/settings/organization",
+        method: "PATCH",
+        body: { name: "SecAPI Labs" },
+        idempotencyKey: null,
+      },
+      {
+        path: "/v1/dashboard/settings/appearance",
+        method: "PUT",
+        body: { theme: "dark", density: "compact" },
+        idempotencyKey: "dashboard-appearance-compact",
+      },
+    ])
   })
 
-  // QUARANTINED — see note above the "dashboard usage helpers" test (OMNI-4091).
-  test.skip("dashboard account deletion helper uses the deferred-request route", async () => {
+  test("dashboard account deletion helper uses the deferred-request route", async () => {
     let seenMethod: string | undefined
     let seenPath: string | undefined
     let seenBody: unknown
