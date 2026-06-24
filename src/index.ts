@@ -80,7 +80,6 @@ export type ResponseView = z.infer<typeof responseViewSchema>
 const DEFAULT_BASE_URL = "https://api.secapi.ai"
 const DEFAULT_API_VERSION = "2026-03-19"
 export const SDK_VERSION = "1.0.2"
-const SDK_USER_AGENT = `secapi-js/${SDK_VERSION}`
 const POSTHOG_CAPTURE_HOST = "https://us.i.posthog.com"
 
 const SAFE_RETRY_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
@@ -97,10 +96,6 @@ const DEFAULT_RETRY_CONFIG = {
 
 type RuntimeProcess = {
   env?: Record<string, string | undefined>
-}
-
-function canSetUserAgentHeader() {
-  return typeof window === "undefined"
 }
 
 function runtimeEnv(name: string): string | undefined {
@@ -343,6 +338,20 @@ type PortfolioStressTestRequest = {
   category?: string
   keys?: string[]
   scenarioKey?: "us_recession" | "higher_for_longer" | "china_growth_scare"
+  customScenario?: {
+    label: string
+    factorShocks?: Record<string, number>
+    macroShocks?: Record<string, number>
+  }
+}
+
+type CountryReportRequest = {
+  country?: string
+  lookback?: string
+  symbols?: string[]
+  holdings?: PortfolioHoldingInput[]
+  horizon?: "1m" | "3m" | "6m" | "12m" | "18m"
+  briefingMode?: "macro" | "portfolio" | "company"
 }
 
 type ModelFactorAnalysisRequest = {
@@ -888,8 +897,8 @@ export class SecApiClient {
   private headers(initHeaders?: HeadersInit) {
     const headers = new Headers(this.options.headers)
     headers.set("secapi-version", this.options.apiVersion ?? DEFAULT_API_VERSION)
-    if (canSetUserAgentHeader() && !headers.has("user-agent")) {
-      headers.set("user-agent", SDK_USER_AGENT)
+    if (!headers.has("user-agent")) {
+      headers.set("user-agent", `secapi-js/${SDK_VERSION}`)
     }
 
     if (this.options.bearerToken) {
@@ -1838,27 +1847,31 @@ export class SecApiClient {
     return this.get("/v1/macro/search", params)
   }
 
-  async macroIndicators(params: RequestParams<{ country: string; indicator_key?: string; indicator?: string; limit?: number }>) {
+  async macroStatus(params: RequestParams<{ country?: string; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string; view?: string }> = {}) {
+    return this.get("/v1/macro/status", params)
+  }
+
+  async macroIndicators(params: RequestParams<{ country?: string; indicator_key?: string; indicator?: string; limit?: number; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }>) {
     return this.get("/v1/macro/indicators", params)
   }
 
-  async macroReleases(params: RequestParams<{ country?: string; indicator_key?: string; limit?: number }> = {}) {
+  async macroReleases(params: RequestParams<{ country?: string; indicator_key?: string; indicator?: string; status?: "released" | "scheduled"; days?: number; limit?: number; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}) {
     return this.get("/v1/macro/releases", params)
   }
 
-  async macroCalendar(params: RequestParams<{ country?: string; days?: number; limit?: number }> = {}) {
+  async macroCalendar(params: RequestParams<{ country?: string; indicator_key?: string; indicator?: string; days?: number; limit?: number; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}) {
     return this.get("/v1/macro/calendar", params)
   }
 
-  async macroForecasts(params: RequestParams<{ country?: string; indicator_key?: string; horizons?: number }> = {}) {
+  async macroForecasts(params: RequestParams<{ country?: string; indicator_key?: string; indicator?: string; horizons?: number; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}) {
     return this.get("/v1/macro/forecasts", params)
   }
 
-  async macroHighSignalPack(params: RequestParams<{ country?: string; include?: "series"; response_mode?: "compact" | "standard" }> = {}) {
+  async macroHighSignalPack(params: RequestParams<{ country?: string; include?: string; response_mode?: "compact" | "standard" | "verbose" | "agent" }> = {}) {
     return this.get("/v1/macro/high-signal-pack", params)
   }
 
-  async macroRegimes(params: RequestParams<{ country?: string; lookback?: string }> = {}) {
+  async macroRegimes(params: RequestParams<{ country?: string; lookback?: string; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}) {
     return this.get("/v1/macro/regimes", params)
   }
 
@@ -2049,6 +2062,14 @@ export class SecApiClient {
     }, undefined, mergeRequestOptions(requestOptionsFromParams(params), options))
   }
 
+  async portfolioStressScenarios(params: RequestParams<FactorResponseControls & { country?: string }> = {}) {
+    return this.get("/v1/portfolio/stress-test/scenarios", params)
+  }
+
+  async factorMacroSensitivity(params: RequestParams<FactorKeySelection & { country?: string; scenario_key?: "us_recession" | "higher_for_longer" | "china_growth_scare"; scenarioKey?: "us_recession" | "higher_for_longer" | "china_growth_scare"; indicators?: string | string[]; limit?: number }> = {}) {
+    return this.get("/v1/factors/macro-sensitivity", params)
+  }
+
   async strategyFactorRotation(body: { country?: string; category?: string; window?: string; lookback?: string; limit?: number } = {}, options?: RequestOptions) {
     return this.request("/v1/strategies/factor-rotation", {
       method: "POST",
@@ -2077,12 +2098,21 @@ export class SecApiClient {
     return this.get("/v1/intelligence/earnings-preview", params)
   }
 
-  async intelligenceCountryReport(body: { country?: string; lookback?: string } = {}, options?: RequestOptions) {
+  async intelligenceCountryReport(body: CountryReportRequest = {}, options?: RequestOptions) {
     return this.request("/v1/intelligence/country-report", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }, undefined, options)
+  }
+
+  async macroInvestmentBriefing(body: CountryReportRequest = {}, params: RequestParams<{ response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}, options?: RequestOptions) {
+    const requestParams = { response_mode: "compact" as const, ...params }
+    return this.request(buildUrl("/v1/intelligence/country-report", requestParams), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }, undefined, mergeRequestOptions(requestOptionsFromParams(requestParams), options))
   }
 
   async intelligencePortfolio(body: {
