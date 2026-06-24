@@ -19,6 +19,13 @@ Create a client instance with your API key:
 ```ts
 import { SecApiClient } from "@secapi/sdk-js"
 
+// Reads SECAPI_API_KEY and SECAPI_BASE_URL from the environment by default.
+const client = new SecApiClient()
+```
+
+You can also pass credentials explicitly:
+
+```ts
 const client = new SecApiClient({
   apiKey: process.env.SECAPI_API_KEY,
   // Optional: override the base URL (defaults to https://api.secapi.ai)
@@ -42,6 +49,9 @@ const client = new SecApiClient({
 | `SECAPI_BEARER_TOKEN` | Preferred OAuth bearer token env var |
 | `SECAPI_BASE_URL` | Preferred base URL override |
 | `SECAPI_API_BASE_URL` | Preferred API base URL override alias |
+| `OMNI_DATASTREAM_API_KEY` | Compatibility API key env var |
+| `OMNI_DATASTREAM_BASE_URL` | Compatibility base URL override |
+| `OMNI_DATASTREAM_API_BASE_URL` | Compatibility base URL override alias |
 | `SECAPI_OPERATOR_API_KEY` | Preferred operator/admin API key env var |
 
 ## Reliability
@@ -86,7 +96,7 @@ Retry telemetry emits anonymous `client_retry_attempt` events to SEC API's telem
 import { SecApiClient } from "@secapi/sdk-js"
 
 const client = new SecApiClient({
-  apiKey: process.env.SECAPI_API_KEY,
+  // Uses SECAPI_API_KEY from the environment.
 })
 
 // Resolve a company entity
@@ -111,16 +121,92 @@ const section = await client.latestSection({
 console.log(section)
 ```
 
+### Grouped namespaces
+
+Flat methods remain the canonical API, and the client also exposes grouped
+aliases for editor discovery:
+
+```ts
+const filing = await client.filings.latest({ ticker: "AAPL", form: "10-K" })
+const section = await client.sections.latest({
+  ticker: "AAPL",
+  form: "10-K",
+  sectionKey: "item_1a",
+  mode: "compact",
+})
+const results = await client.search.semantic({
+  q: "revenue concentration risk",
+  ticker: "AAPL",
+  mode: "hybrid",
+  view: "agent",
+})
+const history = await client.factors.history("VALUE", {
+  range: "1y",
+  response_mode: "compact",
+})
+```
+
+Available namespaces include `entities`, `filings`, `sections`, `search`, and
+`factors`. These namespaces are curated for common discovery workflows; the flat
+methods remain the exhaustive SDK surface.
+
+### Live agent workflow example
+
+For a production-backed copy/paste path, run the focused example that resolves
+an entity, fetches the latest 10-K, and extracts Item 1A in compact mode:
+
+```bash
+export SECAPI_API_KEY="secapi_live_..."
+bun run packages/sdk-js/examples/agent_workflow.ts
+```
+
+From the monorepo root, `bun run smoke:sdk-examples` runs the matching
+JavaScript, Python, Go, and Rust examples and asserts that each returns entity,
+filing, and compact-section metadata.
+
+### Auto-pagination
+
+Cursor endpoints can be consumed with async iterators instead of hand-rolling
+`nextCursor` loops:
+
+```ts
+for await (const filing of client.paginateFilings({
+  ticker: "AAPL",
+  form: "10-K",
+  limit: 100,
+})) {
+  console.log(filing)
+}
+```
+
+Built-in helpers cover common discovery flows: `paginateFilings`,
+`paginateSections`, and `paginateEntities`. For other cursor endpoints, use the
+generic helper and pass the page function:
+
+```ts
+for await (const event of client.paginate(
+  (params) => client.streamEvents("stream_123", params),
+  { limit: 100 },
+  { maxItems: 500 },
+)) {
+  console.log(event)
+}
+```
+
+If an endpoint returns a non-standard list key, provide `getItems` or
+`getNextCursor` in the options.
+
 ## Common Use Cases
 
 ### Factor Data and Portfolio Workflows
 
-Use `response_mode: "compact"` when you are feeding an agent, LLM, notebook, or UI card and want the smallest useful payload. Add `include: "trust"` when you need freshness, methodology, and materialization metadata for citations or launch checks.
+Use `response_mode: "compact"` when you are feeding an agent, LLM, notebook, or UI card and want the smallest useful payload. Compact catalog responses still include readiness/proof summaries. Add `include: "trust"` only when you need the full trust/provenance envelope plus full methodology/materialization/revision/source-rights objects for citations or checks. For catalog/tool-discovery calls, start narrow with `category` plus `limit` before requesting trust metadata; the full trust envelope can be larger than a simple picker payload.
 
 ```ts
 // Factor catalog for picker UIs and agent tool discovery
 const catalog = await client.factorCatalog({
   category: "style",
+  limit: 25,
   response_mode: "compact",
   include: "trust",
 })
@@ -282,7 +368,7 @@ try {
   await client.requestDiagnostics("missing-request-id")
 } catch (error) {
   if (error instanceof SecApiError) {
-    console.error(error.status, error.requestId, error.body)
+    console.error(error.status, error.code, error.requestId, error.message, error.body)
   }
 }
 ```

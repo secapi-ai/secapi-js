@@ -157,8 +157,53 @@ export const statementPeriodSchema = z.object({
   fp: z.string().nullable(),
 })
 
-export const statementValueSchema = statementPeriodSchema.extend({
+// How a statement cell's value relates to the fiscal period it covers:
+//  - "instant": point-in-time (balance-sheet items).
+//  - "fiscal_year_to_date": cumulative from the start of the fiscal year
+//    (income-statement / cash-flow quarterly columns: Q2 = 6mo, Q3 = 9mo, and
+//    annual full-year totals).
+//  - "discrete_period": a stand-alone single period (a Q1 quarterly column is
+//    already discrete).
+export const periodBasisSchema = z.enum([
+  "instant",
+  "fiscal_year_to_date",
+  "discrete_period",
+])
+
+// Reason a discrete-quarter value is what it is (always populated). On success:
+// "derived" (Q2/Q3/Q4 computed) or "already_discrete" (Q1). On failure the
+// value is null and the reason explains why we refused to guess.
+export const discreteReasonSchema = z.enum([
+  "already_discrete",
+  "derived",
+  "instant_statement",
+  "missing_value",
+  "indeterminate_quarter",
+  "no_matching_prior_ytd",
+  "duration_mismatch",
+])
+
+// Derived stand-alone single-quarter value for income-statement / cash-flow
+// quarterly cells. `value` is null (with a reason) whenever the required prior
+// YTD (or the full-year figure for Q4) is unavailable or its window does not
+// line up — we omit rather than fabricate. The as-filed cumulative figure
+// remains on the cell's `value` field.
+export const discreteQuarterSchema = z.object({
   value: z.number().nullable(),
+  basis: z.literal("discrete_period"),
+  reason: discreteReasonSchema,
+  periodStart: z.string().nullable(),
+})
+
+export const statementValueSchema = statementPeriodSchema.extend({
+  // Period start of the as-filed cumulative window (null when unknown). Lets
+  // consumers see whether a cell is a 3/6/9/12-month duration.
+  periodStart: z.string().nullable().optional(),
+  value: z.number().nullable(),
+  // Honest label for the as-filed `value`'s period relationship.
+  periodBasis: periodBasisSchema.optional(),
+  // Derived stand-alone quarter (income-statement / cash-flow quarterly only).
+  discreteQuarter: discreteQuarterSchema.optional(),
 })
 
 export const statementRowSchema = z.object({
@@ -175,6 +220,10 @@ export const compactStatementRowSchema = z.object({
   label: z.string().nullable().optional(),
   unit: z.string().nullable(),
   values: z.array(z.number().nullable()),
+  // Derived stand-alone single-quarter values, aligned to `values` by period.
+  // Present only for derivable quarterly statements (income-statement /
+  // cash-flow); null entries mean the discrete quarter could not be derived.
+  discrete: z.array(z.number().nullable()).optional(),
 })
 
 export const compactStatementSchema = z.object({
@@ -297,6 +346,232 @@ export const segmentedFactSeriesSchema = z.object({
   freshness: freshnessMetadataSchema.optional(),
   materialization: materializationMetadataSchema.optional(),
   validation: validationStatusSchema.optional(),
+})
+
+// ---------------------------------------------------------------------------
+// Company segments — "Business Breakdown" (OMNI-4392)
+//
+// A multi-axis, revenue-anchored segment breakdown that complements (does not
+// replace) /v1/statements/segmented-revenues (revenue-only). Each canonical
+// reporting axis (product / geographic / operating) is de-subtotaled and
+// tied back to the company's total reported revenue so callers can trust the
+// member-level split. Axes whose basis is not GAAP revenue (banks, REITs,
+// insurers report net-revenue / premiums / rental basis) are surfaced but
+// flagged `low_confidence` rather than dropped.
+// ---------------------------------------------------------------------------
+export const companySegmentAxisKindSchema = z.enum(["product", "geographic", "operating"])
+
+export const companySegmentConfidenceSchema = z.enum(["reported", "low_confidence"])
+
+export const companySegmentMemberSchema = z.object({
+  object: z.literal("company_segment"),
+  segment: z.string(),
+  revenue: z.number().nullable(),
+  revenuePct: z.number().nullable(),
+  profitLoss: z.number().nullable(),
+  segmentMargin: z.number().nullable(),
+  yoyGrowthPct: z.number().nullable(),
+})
+
+export const companySegmentAxisSchema = z.object({
+  object: z.literal("company_segment_axis"),
+  axis: companySegmentAxisKindSchema,
+  axisTag: z.string(),
+  periodEnd: z.string().nullable(),
+  priorPeriodEnd: z.string().nullable(),
+  axisTotalRevenue: z.number().nullable(),
+  companyRevenue: z.number().nullable(),
+  tiesToRevenue: z.boolean(),
+  confidence: companySegmentConfidenceSchema,
+  segments: z.array(companySegmentMemberSchema),
+})
+
+export const companySegmentsSchema = z.object({
+  object: z.literal("company_segments"),
+  id: z.string(),
+  createdAt: z.string(),
+  livemode: z.boolean(),
+  entityId: z.string(),
+  ticker: z.string().nullable(),
+  companyName: z.string(),
+  period: z.enum(["annual", "quarterly"]),
+  segments: z.array(companySegmentAxisSchema),
+  note: z.string().nullable().optional(),
+  provenance: provenanceSchema.nullable().optional(),
+  freshness: freshnessMetadataSchema.optional(),
+})
+
+// ---------------------------------------------------------------------------
+// Company Overview — first-party SEC "DD briefing" (OMNI-4392b)
+//
+// Identity + a sector-aware FINANCIAL SNAPSHOT + opt-in, bounded enrichments.
+// companyType drives which financial metrics are valid: `financial_institution`
+// (banks/insurers/REITs/brokers) nulls gross/operating margin + FCF and leans on
+// net margin / ROE / ROA / book value / total assets; `pre_revenue` is a
+// clinical-stage filer with negligible revenue vs operating expense; `operating`
+// is the default. Numbers are null + omitted when a concept isn't reliably
+// available — the endpoint refuses to emit a wrong number.
+// ---------------------------------------------------------------------------
+export const companyTypeSchema = z.enum(["operating", "financial_institution", "pre_revenue"])
+
+export const companyOverviewFormerNameSchema = z.object({
+  name: z.string(),
+  from: z.string().nullable(),
+  to: z.string().nullable(),
+})
+
+export const companyOverviewIdentitySchema = z.object({
+  entityId: z.string(),
+  cik: z.string(),
+  ticker: z.string().nullable(),
+  name: z.string(),
+  tickers: z.array(z.string()),
+  aliases: z.array(z.string()),
+  entityType: z.string(),
+  sector: z.string().nullable(),
+  industry: z.string().nullable(),
+  sicCode: z.string().nullable(),
+  sicDescription: z.string().nullable(),
+  stateOfIncorporation: z.string().nullable(),
+  fiscalYearEnd: z.string().nullable(),
+  exchange: z.string().nullable(),
+  exchanges: z.array(z.string()),
+  formerNames: z.array(companyOverviewFormerNameSchema),
+})
+
+export const companyOverviewLatestFilingSchema = z.object({
+  object: z.literal("company_overview_latest_filing"),
+  form: z.string(),
+  filingDate: z.string(),
+  accessionNumber: z.string(),
+  title: z.string().nullable(),
+  filingUrl: z.string().nullable(),
+})
+
+export const companyOverviewRevenueConceptSchema = z.object({
+  taxonomy: z.string(),
+  tag: z.string(),
+})
+
+const companyOverviewRevenueMetricSchema = z.object({
+  value: z.number().nullable(),
+  series: z.array(z.number()),
+  yoyGrowthPct: z.number().nullable(),
+  cagr3yPct: z.number().nullable(),
+})
+
+const companyOverviewGrowthMetricSchema = z.object({
+  value: z.number().nullable(),
+  series: z.array(z.number()),
+  yoyGrowthPct: z.number().nullable(),
+})
+
+export const companyOverviewMetricsSchema = z.object({
+  revenue: companyOverviewRevenueMetricSchema,
+  netIncome: companyOverviewGrowthMetricSchema,
+  dilutedEps: companyOverviewGrowthMetricSchema,
+  margins: z.object({
+    gross: z.number().nullable(),
+    operating: z.number().nullable(),
+    net: z.number().nullable(),
+  }),
+  roePct: z.number().nullable(),
+  roaPct: z.number().nullable(),
+  balanceSheet: z.object({
+    assets: z.number().nullable(),
+    equity: z.number().nullable(),
+    cash: z.number().nullable(),
+    longTermDebt: z.number().nullable(),
+    debtToEquity: z.number().nullable(),
+    bookValue: z.number().nullable(),
+  }),
+  freeCashFlow: z.number().nullable(),
+  fcfMargin: z.number().nullable(),
+})
+
+export const companyOverviewFinancialSnapshotSchema = z.object({
+  companyType: companyTypeSchema,
+  fiscalYears: z.array(z.number()),
+  revenueConcept: companyOverviewRevenueConceptSchema.nullable(),
+  metrics: companyOverviewMetricsSchema,
+  provenance: provenanceSchema.nullable().optional(),
+  freshness: freshnessMetadataSchema.optional(),
+  materialization: materializationMetadataSchema.optional(),
+})
+
+// One enrichment slot. `status` is `included` when it ran within budget,
+// `reference` when returned as a link the client fetches separately, `error`
+// when an opt-in enrichment could not run (NEVER a 500), `not_requested`
+// otherwise. A failed/referenced enrichment never blocks the base snapshot.
+export const companyOverviewEnrichmentStatusSchema = z.enum([
+  "included",
+  "reference",
+  "error",
+  "not_requested",
+])
+
+export const companyOverviewEnrichmentSchema = z.object({
+  status: companyOverviewEnrichmentStatusSchema,
+  // Populated when status === "reference": the endpoint the client should call to
+  // fetch this (heavy) enrichment on its own request budget. `body` carries the
+  // exact request payload for POST references (typed to match the target
+  // endpoint's contract — e.g. footnote `topics` as a string array); `query`
+  // carries query-string params for GET references. Exactly the relevant one is
+  // present for a given reference.
+  reference: z.object({
+    endpoint: z.string(),
+    method: z.string(),
+    query: z.record(z.string(), z.string()).nullable().optional(),
+    body: z.record(z.string(), z.unknown()).nullable().optional(),
+  }).nullable().optional(),
+  // Populated when status === "included": the compact enrichment payload.
+  data: z.unknown().nullable().optional(),
+  // Populated when status === "error".
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+  }).nullable().optional(),
+})
+
+// Factors enrichment (OMNI-4409) — a quant factor-exposure snapshot for the
+// issuer's stock. Quantified and time-ranged: each exposure carries the model
+// loading (`beta`), where it ranks vs the factor universe (`percentileVsUniverse`,
+// 0–100, null when not materialized), and the as-of / estimation window. This is
+// an EXPOSURE snapshot, NOT a forecast — it never implies predictive power.
+export const companyOverviewFactorExposureSchema = z.object({
+  key: z.string(),
+  label: z.string().nullable().optional(),
+  beta: z.number(),
+  percentileVsUniverse: z.number().nullable(),
+  asOf: z.string().nullable(),
+  window: z.string().nullable(),
+})
+
+export const companyOverviewFactorsDataSchema = z.object({
+  asOf: z.string().nullable(),
+  exposures: z.array(companyOverviewFactorExposureSchema),
+  methodology: z.string(),
+  fullEndpoint: z.string(),
+})
+
+export const companyOverviewEnrichmentsSchema = z.object({
+  segments: companyOverviewEnrichmentSchema,
+  footnotes: companyOverviewEnrichmentSchema,
+  dilution: companyOverviewEnrichmentSchema,
+  factors: companyOverviewEnrichmentSchema,
+})
+
+export const companyOverviewSchema = z.object({
+  object: z.literal("company_overview"),
+  id: z.string(),
+  createdAt: z.string(),
+  livemode: z.boolean(),
+  identity: companyOverviewIdentitySchema,
+  latestMaterialFiling: companyOverviewLatestFilingSchema.nullable(),
+  financialSnapshot: companyOverviewFinancialSnapshotSchema,
+  enrichments: companyOverviewEnrichmentsSchema,
+  provenance: provenanceSchema.nullable().optional(),
+  freshness: freshnessMetadataSchema.optional(),
 })
 
 const pensionBenefitScheduleRowSchema = z.object({
@@ -2161,6 +2436,10 @@ export const entityListSchema = listSchema(entitySchema)
 export const filingListSchema = listSchema(filingSchema)
 export const sectionListSchema = listSchema(sectionSchema)
 export const factPointListSchema = listSchema(factPointSchema).extend({
+  traceparent: z.string().optional(),
+  requestedTag: z.string().nullable().optional(),
+  resolvedTag: z.string().nullable().optional(),
+  aliasStrategy: z.string().nullable().optional(),
   completeness: z.object({
     source: z.enum(["xbrl_facts", "company_facts"]),
     observationsReturned: z.number().int().nonnegative().optional(),
@@ -2616,6 +2895,18 @@ export type EnforcementActionAgentItem = z.infer<typeof enforcementActionAgentIt
 export type EnforcementActionAgentList = z.infer<typeof enforcementActionAgentListSchema>
 export type SegmentedFactSeries = z.infer<typeof segmentedFactSeriesSchema>
 export type SegmentedRevenueSeries = z.infer<typeof segmentedRevenueSeriesSchema>
+export type CompanySegmentAxisKind = z.infer<typeof companySegmentAxisKindSchema>
+export type CompanySegmentConfidence = z.infer<typeof companySegmentConfidenceSchema>
+export type CompanySegmentMember = z.infer<typeof companySegmentMemberSchema>
+export type CompanySegmentAxis = z.infer<typeof companySegmentAxisSchema>
+export type CompanySegments = z.infer<typeof companySegmentsSchema>
+export type CompanyType = z.infer<typeof companyTypeSchema>
+export type CompanyOverviewIdentity = z.infer<typeof companyOverviewIdentitySchema>
+export type CompanyOverviewLatestFiling = z.infer<typeof companyOverviewLatestFilingSchema>
+export type CompanyOverviewFinancialSnapshot = z.infer<typeof companyOverviewFinancialSnapshotSchema>
+export type CompanyOverviewEnrichment = z.infer<typeof companyOverviewEnrichmentSchema>
+export type CompanyOverviewEnrichments = z.infer<typeof companyOverviewEnrichmentsSchema>
+export type CompanyOverview = z.infer<typeof companyOverviewSchema>
 export type PensionBenefitSchedule = z.infer<typeof pensionBenefitScheduleSchema>
 export type ShareFloat = z.infer<typeof shareFloatSchema>
 export type CompanyIncomeStatements = z.infer<typeof companyIncomeStatementsSchema>

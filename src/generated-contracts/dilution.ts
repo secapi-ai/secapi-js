@@ -22,6 +22,7 @@ import {
   degradedStateSchema,
 } from "./foundation.js"
 import { provenanceSchema } from "./schemas.js"
+import { dilutionScoreFactorSchema } from "./dilution-score.js"
 
 // ---------------------------------------------------------------------------
 // Verification block (programmatic, not human)
@@ -186,6 +187,13 @@ export const dilutionConvertibleSchema = z.object({
   prefundedCost: z.number().nullable().optional(),
   priceProtection: z.boolean().nullable().optional(),
   ppClause: z.string().nullable().optional(),
+  // OMNI-4406: structured variable-rate signal. Additive + optional/nullable so
+  // existing rows (NULL) and pre-field responses stay valid. `variable` =
+  // conversion price floats with market/VWAP/"lower of"/floorless; `fixed` =
+  // stated non-floating price; `unknown` = not determinable. `hasResetRatchet`
+  // = full-ratchet or price-reset-on-down-round (NOT weighted-average).
+  conversionPriceType: z.enum(["fixed", "variable", "unknown"]).nullable().optional(),
+  hasResetRatchet: z.boolean().nullable().optional(),
   registered: z.boolean().nullable().optional(),
   underlyingSharesCalculated: z.number().nullable().optional(),
   underlyingSharesRemaining: z.number().nullable().optional(),
@@ -411,7 +419,14 @@ export const dilutionRatingSchema = z.object({
   warrantExerciseRating: z.string().nullable().optional(),
   regsho: z.boolean().nullable().optional(),
   numericScore: z.number().min(0).max(100).nullable().optional(),
+  // Flat `{ key: score }` exposure dict — retained for back-compat (OMNI-3071).
   factorExposures: z.record(z.string(), z.unknown()).default({}),
+  // Full per-factor breakdown (OMNI-4402) — the same shape `/v1/signals/dilution`
+  // exposes on its DEFAULT view (`dilutionScoreFactorSchema`). Additive +
+  // defaulted to `[]` so existing `dilution_rating` consumers that predate this
+  // field do not break; the live-compute path (`envelopeToDilutionRating`)
+  // populates it from the score envelope's `factors`.
+  factors: z.array(dilutionScoreFactorSchema).default([]),
   computedAt: z.string(),
   updatedAt: z.string(),
   ...dilutionVerificationShape,
@@ -432,7 +447,9 @@ export const dilutionShareFloatHistorySchema = z.object({
   ticker: z.string(),
   asOfDate: z.string(),
   sharesOutstanding: z.number().nullable().optional(),
-  publicFloat: z.number().nullable().optional(),
+  // SEC `PublicFloat` XBRL tag — a USD market value (dollars held by non-affiliates),
+  // not a share count; named with the unit so it is not read as shares.
+  publicFloatUsd: z.number().nullable().optional(),
   sourceForm: z.string().nullable().optional(),
   sourceAccession: z.string().nullable().optional(),
   computedAt: z.string(),
