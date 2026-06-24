@@ -79,7 +79,7 @@ export type ResponseView = z.infer<typeof responseViewSchema>
 
 const DEFAULT_BASE_URL = "https://api.secapi.ai"
 const DEFAULT_API_VERSION = "2026-03-19"
-export const SDK_VERSION = "1.0.0"
+export const SDK_VERSION = "1.0.1"
 const POSTHOG_CAPTURE_HOST = "https://us.i.posthog.com"
 
 const SAFE_RETRY_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
@@ -1758,7 +1758,11 @@ export class SecApiClient {
     return this.get("/v1/news/stories", params)
   }
 
-  async macroIndicators(params: RequestParams<{ country: string; indicator_key: string; limit?: number }>) {
+  async macroSearch(params: RequestParams<{ q: string; country?: string; frequency?: string; limit?: number }>) {
+    return this.get("/v1/macro/search", params)
+  }
+
+  async macroIndicators(params: RequestParams<{ country: string; indicator_key?: string; indicator?: string; limit?: number }>) {
     return this.get("/v1/macro/indicators", params)
   }
 
@@ -1780,6 +1784,14 @@ export class SecApiClient {
 
   async macroRegimes(params: RequestParams<{ country?: string; lookback?: string }> = {}) {
     return this.get("/v1/macro/regimes", params)
+  }
+
+  async macroCreditRatings(params: RequestParams<{ country?: string }> = {}) {
+    return this.get("/v1/macro/credit-ratings", params)
+  }
+
+  async macroCreditRating(country: string) {
+    return this.get(`/v1/macro/credit-ratings/${encodeURIComponent(country)}`)
   }
 
   async factorCatalog(params: RequestParams<FactorCatalogParams> = {}) {
