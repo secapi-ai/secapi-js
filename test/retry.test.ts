@@ -27,6 +27,11 @@ function retryHarness(overrides: RetryOptions = {}) {
 
 const TEST_TIMESTAMP = "2026-06-07T00:00:00.000Z"
 
+async function packageVersion() {
+  const packageJson = await Bun.file(new URL("../package.json", import.meta.url)).json()
+  return packageJson.version as string
+}
+
 function dashboardSettingsPayload(overrides: Record<string, unknown> = {}) {
   return {
     object: "dashboard_account_settings",
@@ -116,6 +121,10 @@ function dashboardSettingsPayload(overrides: Record<string, unknown> = {}) {
 }
 
 describe("SecApiClient retry behavior", () => {
+  test("SDK_VERSION matches package metadata", async () => {
+    expect(SDK_VERSION).toBe(await packageVersion())
+  })
+
   test("sends SEC API version header", async () => {
     let headers: Headers | null = null
     const client = new SecApiClient({
@@ -130,6 +139,61 @@ describe("SecApiClient retry behavior", () => {
     await expect(client.health()).resolves.toEqual({ ok: true })
     expect(headers?.get("secapi-version")).toBe("2026-05-20")
     expect(headers?.get(["omni", "version"].join("-"))).toBeNull()
+  })
+
+  test("sends an SDK user agent by default", async () => {
+    let headers: Headers | null = null
+    const client = new SecApiClient({
+      telemetry: false,
+      fetch: async (_url, init) => {
+        headers = new Headers(init?.headers)
+        return jsonResponse(200, { ok: true })
+      },
+    })
+
+    await expect(client.health()).resolves.toEqual({ ok: true })
+    expect(headers?.get("user-agent")).toBe(`secapi-js/${SDK_VERSION}`)
+  })
+
+  test("does not add a default user agent in browser-shaped runtimes", async () => {
+    let headers: Headers | null = null
+    const hadWindow = "window" in globalThis
+    const previousWindow = (globalThis as { window?: unknown }).window
+    Object.defineProperty(globalThis, "window", { configurable: true, value: {} })
+
+    try {
+      const client = new SecApiClient({
+        telemetry: false,
+        fetch: async (_url, init) => {
+          headers = new Headers(init?.headers)
+          return jsonResponse(200, { ok: true })
+        },
+      })
+
+      await expect(client.health()).resolves.toEqual({ ok: true })
+      expect(headers?.has("user-agent")).toBe(false)
+    } finally {
+      if (hadWindow) {
+        Object.defineProperty(globalThis, "window", { configurable: true, value: previousWindow })
+      } else {
+        delete (globalThis as { window?: unknown }).window
+      }
+    }
+  })
+
+  test("allows callers to override the SDK user agent", async () => {
+    let headers: Headers | null = null
+    const client = new SecApiClient({
+      telemetry: false,
+      headers: { "user-agent": "custom-client/1.0" },
+      fetch: async (_url, init) => {
+        headers = new Headers(init?.headers)
+        return jsonResponse(200, { ok: true })
+      },
+    })
+
+    await expect(client.health()).resolves.toEqual({ ok: true })
+    expect(headers?.get("user-agent")).toBe("custom-client/1.0")
   })
 
   test("retries safe GET requests on retryable 5xx responses", async () => {
@@ -191,6 +255,9 @@ describe("SecApiClient retry behavior", () => {
         error_code: "invalid_request",
         title: "ticker is required",
         request_id: "req_alias_123",
+        hint: "Add ticker=AAPL or cik=0000320193.",
+        docsUrl: "https://docs.secapi.ai/api-reference/entities/get-v1-entities-resolve",
+        details: { parameter: "ticker" },
       }),
     })
 
@@ -200,6 +267,9 @@ describe("SecApiClient retry behavior", () => {
       code: "invalid_request",
       requestId: "req_alias_123",
       message: "ticker is required (request_id: req_alias_123)",
+      hint: "Add ticker=AAPL or cik=0000320193.",
+      docsUrl: "https://docs.secapi.ai/api-reference/entities/get-v1-entities-resolve",
+      details: { parameter: "ticker" },
     })
   })
 
@@ -208,13 +278,15 @@ describe("SecApiClient retry behavior", () => {
       retry: false,
       telemetry: false,
       fetch: async () => jsonResponse(502, {
-        requestId: "req_nested_456",
         error: {
           code: -32603,
           message: "JSON-RPC tool error",
           data: {
             code: "mcp_tool_failed",
             message: "hosted tool failed",
+            hint: "Retry with a smaller limit.",
+            docsUrl: "https://docs.secapi.ai/mcp-workflows",
+            requestId: "req_mcp_data",
           },
         },
       }),
@@ -224,8 +296,35 @@ describe("SecApiClient retry behavior", () => {
       name: "SecApiError",
       status: 502,
       code: "mcp_tool_failed",
-      requestId: "req_nested_456",
-      message: "hosted tool failed (request_id: req_nested_456)",
+      requestId: "req_mcp_data",
+      message: "hosted tool failed (request_id: req_mcp_data)",
+      hint: "Retry with a smaller limit.",
+      docsUrl: "https://docs.secapi.ai/mcp-workflows",
+    })
+  })
+
+  test("promotes legacy details diagnostics onto SecApiError", async () => {
+    const client = new SecApiClient({
+      retry: false,
+      telemetry: false,
+      fetch: async () => jsonResponse(401, {
+        code: "missing_api_key",
+        message: "Authentication required.",
+        requestId: "req_auth_details",
+        details: {
+          hint: "Pass your key in the x-api-key header.",
+          docsUrl: "https://docs.secapi.ai/auth-and-pricing",
+        },
+      }),
+    })
+
+    await expect(client.me()).rejects.toMatchObject({
+      name: "SecApiError",
+      status: 401,
+      code: "missing_api_key",
+      requestId: "req_auth_details",
+      hint: "Pass your key in the x-api-key header.",
+      docsUrl: "https://docs.secapi.ai/auth-and-pricing",
     })
   })
 

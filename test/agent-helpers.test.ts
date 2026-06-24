@@ -491,6 +491,28 @@ describe("SecApiClient agent helpers", () => {
     ])
   })
 
+  test("generic paginate raises structured error when a cursor repeats", async () => {
+    const client = new SecApiClient({ apiKey: "secapi_test_key", telemetry: false, retry: false })
+    const iterator = client.paginate(
+      async (params: { cursor?: string }) => ({
+        object: "list",
+        data: [{ accessionNumber: params.cursor ? "0000000000-25-000002" : "0000000000-25-000001" }],
+        hasMore: true,
+        nextCursor: "cur_repeat",
+        requestId: params.cursor ? "req_page_2" : "req_page_1",
+      }),
+      {},
+    )
+    await iterator.next()
+    await iterator.next()
+    await expect(iterator.next()).rejects.toMatchObject({
+      name: "SecApiError",
+      status: 0,
+      code: "client_pagination_cursor_repeated",
+      hint: expect.stringContaining("retry from the first page"),
+    })
+  })
+
   test("paginateFilings stops on an empty page even if a fresh cursor is present", async () => {
     const seenUrls: string[] = []
     const client = new SecApiClient({
