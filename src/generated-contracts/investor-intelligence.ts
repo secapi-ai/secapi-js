@@ -981,6 +981,10 @@ export const portfolioHoldingInputSchema = z.object({
 export const countryReportRequestSchema = z.object({
   country: z.string().min(2).max(12).default("US"),
   lookback: z.string().min(2).max(12).optional(),
+  symbols: z.array(symbolSchema).max(25).default([]).optional(),
+  holdings: z.array(portfolioHoldingInputSchema).min(1).max(250).optional(),
+  horizon: z.enum(["1m", "3m", "6m", "12m", "18m"]).default("6m").optional(),
+  briefingMode: z.enum(["macro", "portfolio", "company"]).default("macro").optional(),
 })
 
 export const portfolioIntelligenceRequestSchema = z.object({
@@ -1084,6 +1088,17 @@ export const portfolioStressTestRequestSchema = z.object({
   category: z.string().min(2).max(32).optional(),
   keys: z.array(z.string()).default([]),
   scenarioKey: z.enum(["us_recession", "higher_for_longer", "china_growth_scare"]).optional(),
+  customScenario: z.object({
+    label: z.string().min(3).max(120),
+    factorShocks: z.record(z.string().min(1).max(64), z.number().min(-1).max(1)).default({}),
+    macroShocks: z.record(z.string().min(1).max(64), z.number().min(-1).max(1)).default({}),
+  }).strict().refine((value) => Object.keys(value.factorShocks).length <= 12, {
+    message: "customScenario.factorShocks accepts at most 12 shocks",
+    path: ["factorShocks"],
+  }).refine((value) => Object.keys(value.macroShocks).length <= 12, {
+    message: "customScenario.macroShocks accepts at most 12 shocks",
+    path: ["macroShocks"],
+  }).optional(),
   holdings: z.array(portfolioHoldingInputSchema).min(1).max(250),
 })
 
@@ -1440,11 +1455,63 @@ export const portfolioStressTestSchema = z.object({
   asOf: z.string(),
   scenarioKey: z.string(),
   scenarioLabel: z.string(),
+  scenarioSource: z.enum(["catalog", "ad_hoc"]).default("catalog").optional(),
   estimatedDrawdownPercent: z.number(),
   factorShocks: z.record(z.string(), z.number()).default({}),
   macroShocks: z.record(z.string(), z.number()).default({}),
+  contributions: z.array(z.object({
+    factorKey: z.string(),
+    beta: z.number(),
+    shock: z.number(),
+    contribution: z.number(),
+    direction: z.enum(["headwind", "tailwind", "neutral"]),
+    rationale: z.string(),
+    sensitivitySource: z.string(),
+  })).default([]).optional(),
   regime: macroRegimeSchema.nullable().optional(),
   conditioningNotes: z.array(z.string()).default([]),
+  summaryMd: z.string(),
+  ...investorMetadataShape,
+})
+
+export const portfolioStressScenarioCatalogSchema = z.object({
+  object: z.literal("portfolio_stress_scenario_catalog"),
+  asOf: z.string(),
+  scenarios: z.array(z.object({
+    scenarioKey: z.string(),
+    label: z.string(),
+    macroShocks: z.record(z.string(), z.number()).default({}),
+    factorShocks: z.record(z.string(), z.number()).default({}),
+    supportedCountries: z.array(z.string()).default([]),
+    methodology: z.string(),
+    confidence: z.enum(["low", "medium", "high"]),
+    limitations: z.array(z.string()).default([]),
+    sourceVersion: z.string(),
+  })).default([]),
+  summaryMd: z.string(),
+  ...investorMetadataShape,
+})
+
+export const factorMacroSensitivitySchema = z.object({
+  object: z.literal("factor_macro_sensitivity"),
+  id: z.string(),
+  asOf: z.string(),
+  country: isoCountryCodeSchema,
+  scenarioKey: z.string().nullable().optional(),
+  rows: z.array(z.object({
+    factorKey: z.string(),
+    indicatorKey: z.string().nullable().optional(),
+    macroShockKey: z.string().nullable().optional(),
+    sensitivity: z.number(),
+    direction: z.enum(["headwind", "tailwind", "neutral"]),
+    confidence: z.enum(["low", "medium", "high"]),
+    rationale: z.string(),
+    observationCount: z.number().int().nonnegative().nullable().optional(),
+    methodology: z.string(),
+  })).default([]),
+  topTailwinds: z.array(z.string()).default([]),
+  topHeadwinds: z.array(z.string()).default([]),
+  limitations: z.array(z.string()).default([]),
   summaryMd: z.string(),
   ...investorMetadataShape,
 })
@@ -1557,6 +1624,48 @@ export const watchlistIntelligenceBundleSchema = z.object({
   ...investorMetadataShape,
 })
 
+export const countryReportBriefingSchema = z.object({
+  topLine: z.string(),
+  regime: z.object({
+    key: z.string().nullable().optional(),
+    label: z.string().nullable().optional(),
+    confidence: z.enum(["low", "medium", "high"]).nullable().optional(),
+  }),
+  keyDrivers: z.array(z.object({
+    theme: z.string(),
+    label: z.string(),
+    latest: z.unknown().nullable().optional(),
+    direction: z.string().nullable().optional(),
+    implication: z.string(),
+  })).default([]),
+  watchItems: z.array(z.object({
+    type: z.string(),
+    label: z.string(),
+    scheduledAt: z.string().nullable().optional(),
+    rationale: z.string(),
+  })).default([]),
+  investmentImplications: z.object({
+    factors: z.array(z.string()).default([]),
+    sectors: z.array(z.string()).default([]),
+    country: z.array(z.string()).default([]),
+    portfolio: z.array(z.string()).default([]),
+    symbols: z.array(z.object({
+      symbol: symbolSchema,
+      lens: z.string(),
+    })).default([]),
+  }),
+  dataQuality: z.object({
+    status: z.string(),
+    indicatorCount: z.number().int().nonnegative(),
+    releaseCount: z.number().int().nonnegative(),
+    forecastCount: z.number().int().nonnegative(),
+    sourcePosture: z.string().nullable().optional(),
+    fallbackCount: z.number().int().nonnegative().optional(),
+    degraded: z.boolean(),
+    notes: z.array(z.string()).default([]),
+  }),
+})
+
 export const countryReportSchema = z.object({
   object: z.literal("country_report"),
   id: z.string(),
@@ -1568,8 +1677,45 @@ export const countryReportSchema = z.object({
   forecasts: z.array(macroForecastSchema).default([]),
   regime: macroRegimeSchema.nullable().optional(),
   likelyDrivers: z.array(attributionContributionSchema).default([]),
+  briefing: countryReportBriefingSchema.optional(),
   summaryMd: z.string(),
   ...investorMetadataShape,
+})
+
+export const macroStatusSchema = z.object({
+  object: z.literal("macro_status"),
+  status: z.enum(["ready", "degraded", "stale", "unsupported"]),
+  generatedAt: z.string(),
+  countries: z.array(z.object({
+    country: isoCountryCodeSchema,
+    status: z.enum(["ready", "degraded", "stale", "unsupported"]),
+    seriesCount: z.number().int().nonnegative(),
+    freshCount: z.number().int().nonnegative(),
+    staleCount: z.number().int().nonnegative(),
+    sourceErrorCount: z.number().int().nonnegative(),
+    fallbackCount: z.number().int().nonnegative(),
+    latestMaterializedAt: z.string().nullable(),
+    oldestFreshnessAgeHours: z.number().nullable(),
+    topAlerts: z.array(z.string()).default([]),
+  })).default([]),
+  sources: z.array(z.object({
+    sourceKey: z.string(),
+    status: z.enum(["ready", "degraded", "stale", "unsupported"]),
+    indicatorCount: z.number().int().nonnegative(),
+    unexpectedFallbackCount: z.number().int().nonnegative(),
+    sourceErrorCount: z.number().int().nonnegative(),
+  })).default([]),
+  alerts: z.array(z.string()).default([]),
+  methodology: z.object({
+    id: z.string(),
+    version: z.string(),
+    summary: z.string(),
+  }),
+  sourceRights: z.object({
+    posture: z.string(),
+    summary: z.string(),
+  }),
+  indicators: z.array(z.record(z.string(), z.unknown())).default([]).optional(),
 })
 
 export const footnoteTopicSchema = z.enum([
@@ -1944,10 +2090,14 @@ export type PortfolioAnalysis = z.infer<typeof portfolioAnalysisSchema>
 export type PortfolioAttribution = z.infer<typeof portfolioAttributionSchema>
 export type PortfolioHedge = z.infer<typeof portfolioHedgeSchema>
 export type PortfolioStressTest = z.infer<typeof portfolioStressTestSchema>
+export type PortfolioStressScenarioCatalog = z.infer<typeof portfolioStressScenarioCatalogSchema>
+export type FactorMacroSensitivity = z.infer<typeof factorMacroSensitivitySchema>
 export type ModelPortfolioFactorView = z.infer<typeof modelPortfolioFactorViewSchema>
 export type ModelFactorAnalysis = z.infer<typeof modelFactorAnalysisSchema>
 export type WatchlistIntelligenceBundle = z.infer<typeof watchlistIntelligenceBundleSchema>
+export type CountryReportBriefing = z.infer<typeof countryReportBriefingSchema>
 export type CountryReport = z.infer<typeof countryReportSchema>
+export type MacroStatus = z.infer<typeof macroStatusSchema>
 export type FootnoteTopic = z.infer<typeof footnoteTopicSchema>
 export type FootnoteIntelligenceRequest = z.infer<typeof footnoteIntelligenceRequestSchema>
 export type FootnoteTopicMatch = z.infer<typeof footnoteTopicMatchSchema>
