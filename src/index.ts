@@ -80,6 +80,7 @@ export type ResponseView = z.infer<typeof responseViewSchema>
 const DEFAULT_BASE_URL = "https://api.secapi.ai"
 const DEFAULT_API_VERSION = "2026-03-19"
 export const SDK_VERSION = "1.0.2"
+const SDK_USER_AGENT = `secapi-js/${SDK_VERSION}`
 const POSTHOG_CAPTURE_HOST = "https://us.i.posthog.com"
 
 const SAFE_RETRY_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
@@ -96,6 +97,10 @@ const DEFAULT_RETRY_CONFIG = {
 
 type RuntimeProcess = {
   env?: Record<string, string | undefined>
+}
+
+function canSetUserAgentHeader() {
+  return typeof window === "undefined"
 }
 
 function runtimeEnv(name: string): string | undefined {
@@ -173,11 +178,23 @@ export type JsonValue =
 
 export type RequestParams<T extends Record<string, unknown>> = T & RequestOptions
 
+export type SecApiPage<T = unknown> = {
+  object?: string
+  data?: T[]
+  items?: T[]
+  results?: T[]
+  sections?: T[]
+  filings?: T[]
+  hasMore?: boolean
+  nextCursor?: string | number | null
+  requestId?: string
+}
+
 export type PaginationOptions<T = unknown> = {
   maxPages?: number
   maxItems?: number
-  getItems?: (page: unknown) => readonly T[]
-  getNextCursor?: (page: unknown) => string | number | null | undefined
+  getItems?: (page: SecApiPage<T> | unknown) => readonly T[]
+  getNextCursor?: (page: SecApiPage<T> | unknown) => string | number | null | undefined
 }
 
 export type FactorApiResponseMode = "compact" | "standard" | "verbose"
@@ -462,15 +479,31 @@ export class SecApiError extends Error {
   readonly status: number
   readonly code?: string
   readonly requestId?: string
+  readonly hint?: string
+  readonly docsUrl?: string
+  readonly details?: unknown
   readonly body?: unknown
   readonly retryAfterMs?: number
 
-  constructor(args: { message: string; status: number; code?: string; requestId?: string; body?: unknown; retryAfterMs?: number }) {
+  constructor(args: {
+    message: string
+    status: number
+    code?: string
+    requestId?: string
+    hint?: string
+    docsUrl?: string
+    details?: unknown
+    body?: unknown
+    retryAfterMs?: number
+  }) {
     super(args.message)
     this.name = "SecApiError"
     this.status = args.status
     this.code = args.code
     this.requestId = args.requestId
+    this.hint = args.hint
+    this.docsUrl = args.docsUrl
+    this.details = args.details
     this.body = args.body
     this.retryAfterMs = args.retryAfterMs
   }
@@ -732,14 +765,46 @@ function nestedErrorDataStringField(payload: unknown, keys: string[]): string | 
   return objectStringField((error as Record<string, unknown>).data, keys)
 }
 
+function nestedDetailsStringField(payload: unknown, keys: string[]): string | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined
+  return objectStringField((payload as Record<string, unknown>).details, keys)
+}
+
 function extractRequestId(payload: unknown): string | undefined {
   return objectStringField(payload, ["requestId", "request_id"])
+    ?? nestedErrorDataStringField(payload, ["requestId", "request_id"])
 }
 
 function extractErrorCode(payload: unknown): string | undefined {
   return objectStringField(payload, ["code", "errorCode", "error_code"])
     ?? nestedErrorDataStringField(payload, ["code", "errorCode", "error_code", "type"])
     ?? nestedErrorStringField(payload, ["code", "errorCode", "error_code", "type"])
+}
+
+function extractErrorHint(payload: unknown): string | undefined {
+  return objectStringField(payload, ["hint"])
+    ?? nestedErrorDataStringField(payload, ["hint"])
+    ?? nestedErrorStringField(payload, ["hint"])
+    ?? nestedDetailsStringField(payload, ["hint"])
+}
+
+function extractDocsUrl(payload: unknown): string | undefined {
+  return objectStringField(payload, ["docsUrl", "docs_url"])
+    ?? nestedErrorDataStringField(payload, ["docsUrl", "docs_url"])
+    ?? nestedErrorStringField(payload, ["docsUrl", "docs_url"])
+    ?? nestedDetailsStringField(payload, ["docsUrl", "docs_url"])
+}
+
+function extractDetails(payload: unknown): unknown {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined
+  const record = payload as Record<string, unknown>
+  if (record.details !== undefined) return record.details
+  const error = record.error
+  if (error && typeof error === "object" && !Array.isArray(error)) {
+    const errorRecord = error as Record<string, unknown>
+    if (errorRecord.data !== undefined) return errorRecord.data
+  }
+  return undefined
 }
 
 function buildErrorMessage(status: number, requestId: string | undefined, payload: unknown) {
@@ -823,6 +888,9 @@ export class SecApiClient {
   private headers(initHeaders?: HeadersInit) {
     const headers = new Headers(this.options.headers)
     headers.set("secapi-version", this.options.apiVersion ?? DEFAULT_API_VERSION)
+    if (canSetUserAgentHeader() && !headers.has("user-agent")) {
+      headers.set("user-agent", SDK_USER_AGENT)
+    }
 
     if (this.options.bearerToken) {
       headers.set("Authorization", `Bearer ${this.options.bearerToken}`)
@@ -993,6 +1061,9 @@ export class SecApiClient {
             status: response.status,
             code: extractErrorCode(payload),
             requestId,
+            hint: extractErrorHint(payload),
+            docsUrl: extractDocsUrl(payload),
+            details: extractDetails(payload),
             body: payload,
             retryAfterMs: parseRetryAfterMs(response.headers.get("retry-after"), now()),
           })
@@ -1377,7 +1448,12 @@ export class SecApiClient {
       const nextCursor = normalizeCursor(getNextCursor(page))
       if (!nextCursor) return
       if (seenCursors.has(nextCursor)) {
-        throw new Error(`SEC API pagination cursor repeated: ${nextCursor}`)
+        throw new SecApiError({
+          message: `SEC API pagination cursor repeated: ${nextCursor}`,
+          status: 0,
+          code: "client_pagination_cursor_repeated",
+          hint: "Stop iteration and retry from the first page; report this request if the same cursor repeats.",
+        })
       }
       if (pageItemCount === 0) return
       seenCursors.add(nextCursor)
@@ -1762,27 +1838,27 @@ export class SecApiClient {
     return this.get("/v1/macro/search", params)
   }
 
-  async macroIndicators(params: RequestParams<{ country?: string; indicator_key?: string; indicator?: string; limit?: number; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }>) {
+  async macroIndicators(params: RequestParams<{ country: string; indicator_key?: string; indicator?: string; limit?: number }>) {
     return this.get("/v1/macro/indicators", params)
   }
 
-  async macroReleases(params: RequestParams<{ country?: string; indicator_key?: string; indicator?: string; status?: "released" | "scheduled"; days?: number; limit?: number; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}) {
+  async macroReleases(params: RequestParams<{ country?: string; indicator_key?: string; limit?: number }> = {}) {
     return this.get("/v1/macro/releases", params)
   }
 
-  async macroCalendar(params: RequestParams<{ country?: string; indicator_key?: string; indicator?: string; days?: number; limit?: number; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}) {
+  async macroCalendar(params: RequestParams<{ country?: string; days?: number; limit?: number }> = {}) {
     return this.get("/v1/macro/calendar", params)
   }
 
-  async macroForecasts(params: RequestParams<{ country?: string; indicator_key?: string; indicator?: string; horizons?: number; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}) {
+  async macroForecasts(params: RequestParams<{ country?: string; indicator_key?: string; horizons?: number }> = {}) {
     return this.get("/v1/macro/forecasts", params)
   }
 
-  async macroHighSignalPack(params: RequestParams<{ country?: string; include?: string; response_mode?: "compact" | "standard" | "verbose" | "agent" }> = {}) {
+  async macroHighSignalPack(params: RequestParams<{ country?: string; include?: "series"; response_mode?: "compact" | "standard" }> = {}) {
     return this.get("/v1/macro/high-signal-pack", params)
   }
 
-  async macroRegimes(params: RequestParams<{ country?: string; lookback?: string; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}) {
+  async macroRegimes(params: RequestParams<{ country?: string; lookback?: string }> = {}) {
     return this.get("/v1/macro/regimes", params)
   }
 

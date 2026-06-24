@@ -368,7 +368,15 @@ try {
   await client.requestDiagnostics("missing-request-id")
 } catch (error) {
   if (error instanceof SecApiError) {
-    console.error(error.status, error.code, error.requestId, error.message, error.body)
+    console.error({
+      status: error.status,
+      code: error.code,
+      requestId: error.requestId,
+      message: error.message,
+      hint: error.hint,
+      docsUrl: error.docsUrl,
+      details: error.details,
+    })
   }
 }
 ```

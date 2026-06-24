@@ -153,6 +153,8 @@ function createFootnoteInvestorMetadataShape() {
 }
 
 const investorMetadataShape = {
+  requestId: z.string().optional(),
+  traceparent: z.string().optional(),
   responseMode: z.enum(["compact", "standard", "verbose"]).optional(),
   dataAsOf: z.string().optional(),
   freshnessStatus: z.string().optional(),

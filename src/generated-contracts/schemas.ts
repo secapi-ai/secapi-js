@@ -2352,6 +2352,9 @@ export const errorSchema = z.object({
   type: z.string(),
   message: z.string(),
   requestId: z.string(),
+  traceparent: z.string().optional(),
+  hint: z.string().optional(),
+  docsUrl: z.string().optional(),
   details: z.record(z.string(), z.unknown()).default({}),
 })
 
