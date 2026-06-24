@@ -79,7 +79,7 @@ export type ResponseView = z.infer<typeof responseViewSchema>
 
 const DEFAULT_BASE_URL = "https://api.secapi.ai"
 const DEFAULT_API_VERSION = "2026-03-19"
-export const SDK_VERSION = "1.0.1"
+export const SDK_VERSION = "1.0.2"
 const POSTHOG_CAPTURE_HOST = "https://us.i.posthog.com"
 
 const SAFE_RETRY_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
@@ -1762,27 +1762,27 @@ export class SecApiClient {
     return this.get("/v1/macro/search", params)
   }
 
-  async macroIndicators(params: RequestParams<{ country: string; indicator_key?: string; indicator?: string; limit?: number }>) {
+  async macroIndicators(params: RequestParams<{ country?: string; indicator_key?: string; indicator?: string; limit?: number; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }>) {
     return this.get("/v1/macro/indicators", params)
   }
 
-  async macroReleases(params: RequestParams<{ country?: string; indicator_key?: string; limit?: number }> = {}) {
+  async macroReleases(params: RequestParams<{ country?: string; indicator_key?: string; indicator?: string; status?: "released" | "scheduled"; days?: number; limit?: number; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}) {
     return this.get("/v1/macro/releases", params)
   }
 
-  async macroCalendar(params: RequestParams<{ country?: string; days?: number; limit?: number }> = {}) {
+  async macroCalendar(params: RequestParams<{ country?: string; indicator_key?: string; indicator?: string; days?: number; limit?: number; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}) {
     return this.get("/v1/macro/calendar", params)
   }
 
-  async macroForecasts(params: RequestParams<{ country?: string; indicator_key?: string; horizons?: number }> = {}) {
+  async macroForecasts(params: RequestParams<{ country?: string; indicator_key?: string; indicator?: string; horizons?: number; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}) {
     return this.get("/v1/macro/forecasts", params)
   }
 
-  async macroHighSignalPack(params: RequestParams<{ country?: string; include?: "series"; response_mode?: "compact" | "standard" }> = {}) {
+  async macroHighSignalPack(params: RequestParams<{ country?: string; include?: string; response_mode?: "compact" | "standard" | "verbose" | "agent" }> = {}) {
     return this.get("/v1/macro/high-signal-pack", params)
   }
 
-  async macroRegimes(params: RequestParams<{ country?: string; lookback?: string }> = {}) {
+  async macroRegimes(params: RequestParams<{ country?: string; lookback?: string; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}) {
     return this.get("/v1/macro/regimes", params)
   }
 
