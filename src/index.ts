@@ -79,8 +79,7 @@ export type ResponseView = z.infer<typeof responseViewSchema>
 
 const DEFAULT_BASE_URL = "https://api.secapi.ai"
 const DEFAULT_API_VERSION = "2026-03-19"
-export const SDK_VERSION = "1.0.2"
-const SDK_USER_AGENT = `secapi-js/${SDK_VERSION}`
+export const SDK_VERSION = "1.1.0"
 const POSTHOG_CAPTURE_HOST = "https://us.i.posthog.com"
 
 const SAFE_RETRY_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
@@ -97,10 +96,6 @@ const DEFAULT_RETRY_CONFIG = {
 
 type RuntimeProcess = {
   env?: Record<string, string | undefined>
-}
-
-function canSetUserAgentHeader() {
-  return typeof window === "undefined"
 }
 
 function runtimeEnv(name: string): string | undefined {
@@ -123,10 +118,14 @@ function normalizedOption(value: string | undefined): string | undefined {
 }
 
 function resolveClientOptions(options: SecApiClientOptions): SecApiClientOptions {
+  const explicitBearerToken = normalizedOption(options.bearerToken)
+  const explicitApiKey = normalizedOption(options.apiKey)
+  const apiKey = explicitApiKey ?? (explicitBearerToken ? undefined : firstRuntimeEnv("SECAPI_API_KEY", "OMNI_DATASTREAM_API_KEY"))
+  const bearerToken = explicitBearerToken ?? (apiKey ? undefined : firstRuntimeEnv("SECAPI_BEARER_TOKEN", "OMNI_DATASTREAM_BEARER_TOKEN"))
   return {
     ...options,
-    apiKey: normalizedOption(options.apiKey) ?? firstRuntimeEnv("SECAPI_API_KEY", "OMNI_DATASTREAM_API_KEY"),
-    bearerToken: normalizedOption(options.bearerToken) ?? firstRuntimeEnv("SECAPI_BEARER_TOKEN", "OMNI_DATASTREAM_BEARER_TOKEN"),
+    apiKey,
+    bearerToken,
     baseUrl: normalizedOption(options.baseUrl) ?? firstRuntimeEnv("SECAPI_BASE_URL", "SECAPI_API_BASE_URL", "OMNI_DATASTREAM_BASE_URL", "OMNI_DATASTREAM_API_BASE_URL"),
   }
 }
@@ -178,23 +177,11 @@ export type JsonValue =
 
 export type RequestParams<T extends Record<string, unknown>> = T & RequestOptions
 
-export type SecApiPage<T = unknown> = {
-  object?: string
-  data?: T[]
-  items?: T[]
-  results?: T[]
-  sections?: T[]
-  filings?: T[]
-  hasMore?: boolean
-  nextCursor?: string | number | null
-  requestId?: string
-}
-
 export type PaginationOptions<T = unknown> = {
   maxPages?: number
   maxItems?: number
-  getItems?: (page: SecApiPage<T> | unknown) => readonly T[]
-  getNextCursor?: (page: SecApiPage<T> | unknown) => string | number | null | undefined
+  getItems?: (page: unknown) => readonly T[]
+  getNextCursor?: (page: unknown) => string | number | null | undefined
 }
 
 export type FactorApiResponseMode = "compact" | "standard" | "verbose"
@@ -479,33 +466,41 @@ export class SecApiError extends Error {
   readonly status: number
   readonly code?: string
   readonly requestId?: string
-  readonly hint?: string
-  readonly docsUrl?: string
-  readonly details?: unknown
   readonly body?: unknown
   readonly retryAfterMs?: number
+  readonly hint?: string
+  readonly docsUrl?: string
+  readonly docs_url?: string
+  readonly action?: string
+  readonly retryable?: boolean
+  readonly details?: Record<string, unknown>
 
   constructor(args: {
     message: string
     status: number
     code?: string
     requestId?: string
-    hint?: string
-    docsUrl?: string
-    details?: unknown
     body?: unknown
     retryAfterMs?: number
+    hint?: string
+    docsUrl?: string
+    action?: string
+    retryable?: boolean
+    details?: Record<string, unknown>
   }) {
     super(args.message)
     this.name = "SecApiError"
     this.status = args.status
     this.code = args.code
     this.requestId = args.requestId
-    this.hint = args.hint
-    this.docsUrl = args.docsUrl
-    this.details = args.details
     this.body = args.body
     this.retryAfterMs = args.retryAfterMs
+    this.hint = args.hint
+    this.docsUrl = args.docsUrl
+    this.docs_url = args.docsUrl
+    this.action = args.action
+    this.retryable = args.retryable
+    this.details = args.details
   }
 }
 
@@ -582,6 +577,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value))
 }
 
+function nestedRecord(value: unknown, key: string): Record<string, unknown> | undefined {
+  return isRecord(value) && isRecord(value[key]) ? value[key] as Record<string, unknown> : undefined
+}
+
 function defaultPageItems<T>(page: unknown): readonly T[] {
   if (!isRecord(page)) return []
   for (const key of ["data", "items", "results", "sections", "filings"]) {
@@ -624,6 +623,37 @@ function withRequiredInclude<T extends Record<string, unknown>>(params: T, requi
 
 function methodOf(init: RequestInit) {
   return (init.method ?? "GET").toUpperCase()
+}
+
+/** The columnar envelope returned when a tool/endpoint is called with response_format='table'. */
+export type TablePayload = {
+  object: "table"
+  format?: string
+  columns: string[]
+  rows: unknown[][]
+}
+
+/**
+ * Decode a `response_format='table'` columnar envelope (`{ object:'table', columns, rows }`)
+ * back into an array of records. The table form drops repeated keys to cut tokens 30-90%;
+ * this restores the row objects client-side so callers don't hand-zip columns to cells.
+ *
+ * @example
+ *   const table = res.data.content?.[0] // or a REST table body
+ *   const rows = decodeTable(table) // [{ ticker: 'AAPL', revenue: 391035000000 }, ...]
+ */
+export function decodeTable(payload: unknown): Record<string, unknown>[] {
+  const table = payload as Partial<TablePayload> | null | undefined
+  if (!table || table.object !== "table" || !Array.isArray(table.columns) || !Array.isArray(table.rows)) {
+    throw new Error("decodeTable: expected a table envelope ({ object: 'table', columns, rows })")
+  }
+  const columns = table.columns
+  return table.rows.map((row) => {
+    const record: Record<string, unknown> = {}
+    const cells = Array.isArray(row) ? row : []
+    for (let i = 0; i < columns.length; i += 1) record[columns[i]!] = cells[i]
+    return record
+  })
 }
 
 function sleep(delayMs: number) {
@@ -684,6 +714,10 @@ function retryDelayMs(args: {
 
 function isAbortError(error: unknown) {
   return Boolean(error && typeof error === "object" && "name" in error && (error as { name?: unknown }).name === "AbortError")
+}
+
+function isBrowserRuntime() {
+  return "window" in globalThis
 }
 
 function retryBudgetExceededError() {
@@ -753,6 +787,24 @@ function objectStringField(payload: unknown, keys: string[]): string | undefined
   return undefined
 }
 
+function objectNumberField(payload: unknown, keys: string[]): number | undefined {
+  if (!isRecord(payload)) return undefined
+  for (const key of keys) {
+    const value = payload[key]
+    if (typeof value === "number" && Number.isFinite(value)) return value
+  }
+  return undefined
+}
+
+function objectBooleanField(payload: unknown, keys: string[]): boolean | undefined {
+  if (!isRecord(payload)) return undefined
+  for (const key of keys) {
+    const value = payload[key]
+    if (typeof value === "boolean") return value
+  }
+  return undefined
+}
+
 function nestedErrorStringField(payload: unknown, keys: string[]): string | undefined {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined
   return objectStringField((payload as Record<string, unknown>).error, keys)
@@ -765,51 +817,57 @@ function nestedErrorDataStringField(payload: unknown, keys: string[]): string | 
   return objectStringField((error as Record<string, unknown>).data, keys)
 }
 
-function nestedDetailsStringField(payload: unknown, keys: string[]): string | undefined {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined
-  return objectStringField((payload as Record<string, unknown>).details, keys)
+function diagnosticData(payload: unknown): Record<string, unknown> | undefined {
+  return nestedRecord(nestedRecord(payload, "error"), "data")
+}
+
+function diagnosticDetails(payload: unknown): Record<string, unknown> | undefined {
+  return diagnosticData(payload) ?? nestedRecord(payload, "details")
 }
 
 function extractRequestId(payload: unknown): string | undefined {
-  return objectStringField(payload, ["requestId", "request_id"])
-    ?? nestedErrorDataStringField(payload, ["requestId", "request_id"])
+  return objectStringField(diagnosticData(payload), ["requestId", "request_id"])
+    ?? objectStringField(payload, ["requestId", "request_id"])
 }
 
 function extractErrorCode(payload: unknown): string | undefined {
-  return objectStringField(payload, ["code", "errorCode", "error_code"])
+  return objectStringField(diagnosticData(payload), ["code", "errorCode", "error_code"])
+    ?? objectStringField(payload, ["code", "errorCode", "error_code"])
     ?? nestedErrorDataStringField(payload, ["code", "errorCode", "error_code", "type"])
     ?? nestedErrorStringField(payload, ["code", "errorCode", "error_code", "type"])
 }
 
-function extractErrorHint(payload: unknown): string | undefined {
-  return objectStringField(payload, ["hint"])
-    ?? nestedErrorDataStringField(payload, ["hint"])
-    ?? nestedErrorStringField(payload, ["hint"])
-    ?? nestedDetailsStringField(payload, ["hint"])
+function extractDiagnosticString(payload: unknown, keys: string[]): string | undefined {
+  return objectStringField(diagnosticData(payload), keys)
+    ?? objectStringField(nestedRecord(payload, "details"), keys)
+    ?? objectStringField(payload, keys)
+    ?? nestedErrorDataStringField(payload, keys)
+    ?? nestedErrorStringField(payload, keys)
 }
 
-function extractDocsUrl(payload: unknown): string | undefined {
-  return objectStringField(payload, ["docsUrl", "docs_url"])
-    ?? nestedErrorDataStringField(payload, ["docsUrl", "docs_url"])
-    ?? nestedErrorStringField(payload, ["docsUrl", "docs_url"])
-    ?? nestedDetailsStringField(payload, ["docsUrl", "docs_url"])
+function extractRetryable(payload: unknown): boolean | undefined {
+  return objectBooleanField(diagnosticData(payload), ["retryable"])
+    ?? objectBooleanField(nestedRecord(payload, "details"), ["retryable"])
+    ?? objectBooleanField(payload, ["retryable"])
 }
 
-function extractDetails(payload: unknown): unknown {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined
-  const record = payload as Record<string, unknown>
-  if (record.details !== undefined) return record.details
-  const error = record.error
-  if (error && typeof error === "object" && !Array.isArray(error)) {
-    const errorRecord = error as Record<string, unknown>
-    if (errorRecord.data !== undefined) return errorRecord.data
-  }
-  return undefined
+function structuredRetryAfterMs(payload: unknown): number | undefined {
+  const source = diagnosticData(payload) ?? payload
+  const details = nestedRecord(payload, "details")
+  const milliseconds =
+    objectNumberField(source, ["retryAfterMs", "retry_after_ms"])
+    ?? objectNumberField(details, ["retryAfterMs", "retry_after_ms"])
+  if (milliseconds !== undefined) return milliseconds
+  const seconds =
+    objectNumberField(source, ["retryAfterSeconds", "retry_after_seconds"])
+    ?? objectNumberField(details, ["retryAfterSeconds", "retry_after_seconds"])
+  return seconds === undefined ? undefined : seconds * 1_000
 }
 
 function buildErrorMessage(status: number, requestId: string | undefined, payload: unknown) {
   const message =
-    objectStringField(payload, ["message"])
+    objectStringField(diagnosticData(payload), ["message"])
+    ?? objectStringField(payload, ["message"])
     ?? objectStringField(payload, ["error"])
     ?? objectStringField(payload, ["detail", "title"])
     ?? nestedErrorDataStringField(payload, ["message", "detail", "title"])
@@ -869,12 +927,34 @@ export class SecApiClient {
     history: (...args: Parameters<SecApiClient["factorHistory"]>) => this.factorHistory(...args),
     historyCsv: (...args: Parameters<SecApiClient["factorHistoryCsv"]>) => this.factorHistoryCsv(...args),
     dashboard: (...args: Parameters<SecApiClient["factorDashboard"]>) => this.factorDashboard(...args),
+    macroSensitivity: (...args: Parameters<SecApiClient["factorMacroSensitivity"]>) => this.factorMacroSensitivity(...args),
     screen: (...args: Parameters<SecApiClient["factorScreen"]>) => this.factorScreen(...args),
     valuations: (...args: Parameters<SecApiClient["factorValuations"]>) => this.factorValuations(...args),
     exposures: (...args: Parameters<SecApiClient["factorExposures"]>) => this.factorExposures(...args),
     decomposition: (...args: Parameters<SecApiClient["factorDecomposition"]>) => this.factorDecomposition(...args),
     relatedStocks: (...args: Parameters<SecApiClient["factorRelatedStocks"]>) => this.factorRelatedStocks(...args),
     similarityPack: (...args: Parameters<SecApiClient["factorSimilarityPack"]>) => this.factorSimilarityPack(...args),
+  }
+
+  readonly macro = {
+    search: (...args: Parameters<SecApiClient["macroSearch"]>) => this.macroSearch(...args),
+    status: (...args: Parameters<SecApiClient["macroStatus"]>) => this.macroStatus(...args),
+    briefing: (...args: Parameters<SecApiClient["macroBriefing"]>) => this.macroBriefing(...args),
+    indicators: (...args: Parameters<SecApiClient["macroIndicators"]>) => this.macroIndicators(...args),
+    releases: (...args: Parameters<SecApiClient["macroReleases"]>) => this.macroReleases(...args),
+    calendar: (...args: Parameters<SecApiClient["macroCalendar"]>) => this.macroCalendar(...args),
+    forecasts: (...args: Parameters<SecApiClient["macroForecasts"]>) => this.macroForecasts(...args),
+    highSignalPack: (...args: Parameters<SecApiClient["macroHighSignalPack"]>) => this.macroHighSignalPack(...args),
+    regimes: (...args: Parameters<SecApiClient["macroRegimes"]>) => this.macroRegimes(...args),
+    creditRatings: (...args: Parameters<SecApiClient["macroCreditRatings"]>) => this.macroCreditRatings(...args),
+    creditRating: (...args: Parameters<SecApiClient["macroCreditRating"]>) => this.macroCreditRating(...args),
+  }
+
+  readonly portfolio = {
+    optimize: (...args: Parameters<SecApiClient["portfolioOptimize"]>) => this.portfolioOptimize(...args),
+    hedge: (...args: Parameters<SecApiClient["portfolioHedge"]>) => this.portfolioHedge(...args),
+    stressTest: (...args: Parameters<SecApiClient["portfolioStressTest"]>) => this.portfolioStressTest(...args),
+    stressScenarios: (...args: Parameters<SecApiClient["portfolioStressScenarios"]>) => this.portfolioStressScenarios(...args),
   }
 
   get baseUrl() {
@@ -888,8 +968,8 @@ export class SecApiClient {
   private headers(initHeaders?: HeadersInit) {
     const headers = new Headers(this.options.headers)
     headers.set("secapi-version", this.options.apiVersion ?? DEFAULT_API_VERSION)
-    if (canSetUserAgentHeader() && !headers.has("user-agent")) {
-      headers.set("user-agent", SDK_USER_AGENT)
+    if (!headers.has("user-agent") && !isBrowserRuntime()) {
+      headers.set("user-agent", `secapi-js/${SDK_VERSION}`)
     }
 
     if (this.options.bearerToken) {
@@ -953,6 +1033,7 @@ export class SecApiClient {
 
     if (args.error instanceof SecApiError) {
       const status = args.error.status
+      if (args.error.retryable === false) return { retryable: false, status, reason: "non_retryable_status" }
       if (NEVER_RETRY_STATUSES.has(status)) return { retryable: false, status, reason: "non_retryable_status" }
       if (!RETRYABLE_STATUSES.has(status)) return { retryable: false, status, reason: "status" }
       if (status === 429) return { retryable: true, status, reason: "status" }
@@ -1061,11 +1142,13 @@ export class SecApiClient {
             status: response.status,
             code: extractErrorCode(payload),
             requestId,
-            hint: extractErrorHint(payload),
-            docsUrl: extractDocsUrl(payload),
-            details: extractDetails(payload),
             body: payload,
-            retryAfterMs: parseRetryAfterMs(response.headers.get("retry-after"), now()),
+            retryAfterMs: parseRetryAfterMs(response.headers.get("retry-after"), now()) ?? structuredRetryAfterMs(payload),
+            hint: extractDiagnosticString(payload, ["hint"]),
+            docsUrl: extractDiagnosticString(payload, ["docsUrl", "docs_url"]),
+            action: extractDiagnosticString(payload, ["action"]),
+            retryable: extractRetryable(payload),
+            details: diagnosticDetails(payload),
           })
         }
 
@@ -1081,7 +1164,7 @@ export class SecApiClient {
         }
         lastError = error
         const decision = this.shouldRetry({ error, method, retryDisabled, unsafeOptIn })
-        const retryAfterMs = error instanceof SecApiError && decision.status === 429 ? error.retryAfterMs : undefined
+        const retryAfterMs = error instanceof SecApiError ? error.retryAfterMs : undefined
 
         if (!decision.retryable || attempt >= maxRetries) {
           if (decision.retryable && circuitEligible) this.circuitBreaker.recordFailure(now())
@@ -1232,14 +1315,24 @@ export class SecApiClient {
     return this.request("/v1/limits", {}, undefined, options)
   }
 
+  async deliveryEvents(params: RequestParams<{ kind?: string; type?: string; requestId?: string; since?: string; limit?: number }> = {}) {
+    return this.get("/v1/delivery/events", params)
+  }
+
+  async exportDeliveryEvents(
+    params: RequestParams<{ kind?: string; type?: string; requestId?: string; since?: string; limit?: number; format?: "json" | "ndjson" }> = {},
+  ) {
+    return this.get("/v1/delivery/events/export", params)
+  }
+
   async events(params: RequestParams<{ kind?: string; type?: string; requestId?: string; since?: string; limit?: number }> = {}) {
-    return this.get("/v1/events", params)
+    return this.deliveryEvents(params)
   }
 
   async exportEvents(
     params: RequestParams<{ kind?: string; type?: string; requestId?: string; since?: string; limit?: number; format?: "json" | "ndjson" }> = {},
   ) {
-    return this.get("/v1/events/export", params)
+    return this.exportDeliveryEvents(params)
   }
 
   async requestDiagnostics(requestId: string, options?: RequestOptions) {
@@ -1351,7 +1444,14 @@ export class SecApiClient {
   }
 
   async createMonitor(
-    body: { name: string; query: string; filters?: Record<string, unknown> },
+    body: {
+      name: string
+      query: string
+      filters?: Record<string, unknown>
+      searchMode?: "keyword"
+      webhookUrl?: string
+      delivery?: { type: "email"; config: { to: string } }
+    },
     options?: RequestOptions,
   ) {
     return this.request("/v1/monitors", {
@@ -1359,6 +1459,18 @@ export class SecApiClient {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }, undefined, options)
+  }
+
+  async listMonitors(params: RequestParams<{ limit?: number }> = {}) {
+    return this.get("/v1/monitors", params)
+  }
+
+  async getMonitor(monitorId: string, options?: RequestOptions) {
+    return this.request(`/v1/monitors/${encodeURIComponent(monitorId)}`, {}, undefined, options)
+  }
+
+  async deleteMonitor(monitorId: string, options?: RequestOptions) {
+    return this.request(`/v1/monitors/${encodeURIComponent(monitorId)}`, { method: "DELETE" }, undefined, options)
   }
 
   async monitorMatches(monitorId: string, params: RequestParams<{ cursor?: string; limit?: number }> = {}) {
@@ -1385,6 +1497,14 @@ export class SecApiClient {
   async rotateWebhookEndpointSecret(webhookId: string, options?: RequestOptions) {
     return this.request(`/v1/webhook_endpoints/${encodeURIComponent(webhookId)}/rotate_secret`, {
       method: "POST",
+    }, undefined, options)
+  }
+
+  async testWebhookEndpoint(webhookId: string, body: Record<string, unknown> = {}, options?: RequestOptions) {
+    return this.request(`/v1/webhook_endpoints/${encodeURIComponent(webhookId)}/test`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
     }, undefined, options)
   }
 
@@ -1452,7 +1572,7 @@ export class SecApiClient {
           message: `SEC API pagination cursor repeated: ${nextCursor}`,
           status: 0,
           code: "client_pagination_cursor_repeated",
-          hint: "Stop iteration and retry from the first page; report this request if the same cursor repeats.",
+          hint: "Stop pagination and retry from the first page. Preserve the repeated cursor when reporting this to support.",
         })
       }
       if (pageItemCount === 0) return
@@ -1838,27 +1958,51 @@ export class SecApiClient {
     return this.get("/v1/macro/search", params)
   }
 
-  async macroIndicators(params: RequestParams<{ country: string; indicator_key?: string; indicator?: string; limit?: number }>) {
+  async macroStatus(params: RequestParams<{ country?: string; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}) {
+    return this.get("/v1/macro/status", params)
+  }
+
+  async macroBriefing(
+    body: {
+      country?: string
+      lookback?: string
+      symbols?: string[]
+      briefingMode?: "macro" | "portfolio" | "company"
+      briefing_mode?: "macro" | "portfolio" | "company"
+      response_mode?: "compact" | "standard" | "verbose" | "agent"
+      include?: string
+    } = {},
+    options?: RequestOptions,
+  ) {
+    const { response_mode = "compact", include, ...requestBody } = body
+    return this.request(buildUrl("/v1/intelligence/country-report", { response_mode, include }), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(requestBody),
+    }, undefined, options)
+  }
+
+  async macroIndicators(params: RequestParams<{ country?: string; indicator_key?: string; indicator?: string; limit?: number; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }>) {
     return this.get("/v1/macro/indicators", params)
   }
 
-  async macroReleases(params: RequestParams<{ country?: string; indicator_key?: string; limit?: number }> = {}) {
+  async macroReleases(params: RequestParams<{ country?: string; indicator_key?: string; indicator?: string; status?: "released" | "scheduled"; days?: number; limit?: number; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}) {
     return this.get("/v1/macro/releases", params)
   }
 
-  async macroCalendar(params: RequestParams<{ country?: string; days?: number; limit?: number }> = {}) {
+  async macroCalendar(params: RequestParams<{ country?: string; indicator_key?: string; indicator?: string; days?: number; limit?: number; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}) {
     return this.get("/v1/macro/calendar", params)
   }
 
-  async macroForecasts(params: RequestParams<{ country?: string; indicator_key?: string; horizons?: number }> = {}) {
+  async macroForecasts(params: RequestParams<{ country?: string; indicator_key?: string; indicator?: string; horizons?: number; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}) {
     return this.get("/v1/macro/forecasts", params)
   }
 
-  async macroHighSignalPack(params: RequestParams<{ country?: string; include?: "series"; response_mode?: "compact" | "standard" }> = {}) {
+  async macroHighSignalPack(params: RequestParams<{ country?: string; include?: string; response_mode?: "compact" | "standard" | "verbose" | "agent" }> = {}) {
     return this.get("/v1/macro/high-signal-pack", params)
   }
 
-  async macroRegimes(params: RequestParams<{ country?: string; lookback?: string }> = {}) {
+  async macroRegimes(params: RequestParams<{ country?: string; lookback?: string; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}) {
     return this.get("/v1/macro/regimes", params)
   }
 
@@ -1900,6 +2044,10 @@ export class SecApiClient {
 
   async factorDashboard(params: RequestParams<FactorKeySelection & { country?: string; limit?: number; ticker?: string; portfolioId?: string }> = {}) {
     return this.get("/v1/factors/dashboard", params)
+  }
+
+  async factorMacroSensitivity(params: RequestParams<FactorKeySelection & { country?: string; scenario_key?: string; scenarioKey?: string; factors?: string | string[] }> = {}) {
+    return this.get("/v1/factors/macro-sensitivity", params)
   }
 
   async factorRegimePerformance(params: RequestParams<FactorKeySelection & { country?: string; limit?: number }> = {}) {
@@ -2047,6 +2195,10 @@ export class SecApiClient {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }, undefined, mergeRequestOptions(requestOptionsFromParams(params), options))
+  }
+
+  async portfolioStressScenarios(params: RequestParams<{ country?: string; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}) {
+    return this.get("/v1/portfolio/stress-test/scenarios", params)
   }
 
   async strategyFactorRotation(body: { country?: string; category?: string; window?: string; lookback?: string; limit?: number } = {}, options?: RequestOptions) {
@@ -2211,11 +2363,41 @@ export class SecApiClient {
     return this.get("/v1/companies/cash-flow-statements", params)
   }
 
-  async companyFinancials(params: RequestParams<{ ticker: string; period?: "annual" | "quarterly"; limit?: number }>) {
+  /**
+   * Company overview — a due-diligence briefing (identity, latest material filing, financial
+   * snapshot). Pass `ticker` (or `cik`) for one company, or `tickers` (up to 50) for a
+   * portfolio batch returned as a keyed list with per-entity ok/error status (billed per
+   * entity). `tickers` is sent as a comma-separated list.
+   */
+  async companyOverview(
+    params: RequestParams<
+      // Single: ticker/cik with optional include enrichments. Batch: tickers[] only — the
+      // batch route returns light core for every entity and does not apply include, so the
+      // two are mutually exclusive at the type level.
+      | { ticker?: string; cik?: string; include?: string | string[]; tickers?: never }
+      | { tickers: string[]; include?: never }
+    >,
+  ) {
+    return this.get("/v1/companies/overview", params)
+  }
+
+  /**
+   * Unified financial statements. Pass `ticker`/`cik` for one company, or `tickers` (up to 50)
+   * for a portfolio batch (billed per entity, returned as a keyed list).
+   */
+  async companyFinancials(
+    params: RequestParams<{ ticker?: string; cik?: string; tickers?: string[]; period?: "annual" | "quarterly"; limit?: number }>,
+  ) {
     return this.get("/v1/companies/financials", params)
   }
 
-  async companyRatios(params: RequestParams<{ ticker: string; period?: "annual" | "quarterly"; limit?: number }>) {
+  /**
+   * Computed financial ratios. Pass `ticker` for one company, or `tickers` (up to 50) for a
+   * portfolio batch (billed per entity, returned as a keyed list).
+   */
+  async companyRatios(
+    params: RequestParams<{ ticker?: string; tickers?: string[]; period?: "annual" | "quarterly"; limit?: number }>,
+  ) {
     return this.get("/v1/companies/ratios", params)
   }
 
@@ -2355,29 +2537,40 @@ export class SecApiClient {
    * Uses the global `WebSocket` constructor (Node 21+, Bun, Deno, browsers).
    * Returns a `SecApiFilingStream` with typed event callbacks and auto-reconnect.
    */
-  streamFilings(params: StreamFilingsParams = {}): SecApiFilingStream {
+  streamFilings(params?: StreamFilingsParams): SecApiFilingStream {
+    const streamId = params?.streamId?.trim()
+    if (!streamId) {
+      throw new SecApiError({
+        message: "streamFilings requires a subscription-backed streamId. Create a stream subscription first, then pass its id.",
+        status: 0,
+        code: "client_stream_id_required",
+      })
+    }
+    const options = params as StreamFilingsParams
     const streamState: { forms?: string | string[]; tickers?: string | string[]; cursor?: string } = {
-      forms: params.forms,
-      tickers: params.tickers,
-      cursor: params.cursor,
+      forms: options.forms,
+      tickers: options.tickers,
+      cursor: options.cursor,
     }
 
     return new SecApiFilingStream(async (cursor) => {
       const ticket = await this.createStreamTicket()
       return this.baseUrl.replace(/^http/, "ws") + buildUrl("/v1/stream/ws", {
+        stream_id: streamId,
         forms: streamState.forms,
         tickers: streamState.tickers,
         cursor: cursor ?? streamState.cursor,
         ticket: ticket.token,
       })
     }, {
-      autoReconnect: params.autoReconnect ?? true,
-      maxReconnectDelayMs: params.maxReconnectDelayMs ?? 30_000,
-      onFiling: params.onFiling,
-      onConnected: params.onConnected,
-      onRateLimited: params.onRateLimited,
-      onError: params.onError,
-      onClose: params.onClose,
+      autoReconnect: options.autoReconnect ?? true,
+      maxReconnectDelayMs: options.maxReconnectDelayMs ?? 30_000,
+      onFiling: options.onFiling,
+      onEvent: options.onEvent,
+      onConnected: options.onConnected,
+      onRateLimited: options.onRateLimited,
+      onError: options.onError,
+      onClose: options.onClose,
     }, (filters) => {
       if (filters.forms) {
         streamState.forms = filters.forms
@@ -2394,12 +2587,14 @@ export class SecApiClient {
 // ---------------------------------------------------------------------------
 
 export type StreamFilingsParams = {
+  streamId: string
   forms?: string | string[]
   tickers?: string | string[]
   cursor?: string
   autoReconnect?: boolean
   maxReconnectDelayMs?: number
   onFiling?: (event: FilingStreamEvent) => void
+  onEvent?: (event: unknown) => void
   onConnected?: (event: StreamConnectedEvent) => void
   onRateLimited?: (event: StreamRateLimitedEvent) => void
   onError?: (error: unknown) => void
@@ -2439,6 +2634,7 @@ type StreamInternalOptions = {
   autoReconnect: boolean
   maxReconnectDelayMs: number
   onFiling?: (event: FilingStreamEvent) => void
+  onEvent?: (event: unknown) => void
   onConnected?: (event: StreamConnectedEvent) => void
   onRateLimited?: (event: StreamRateLimitedEvent) => void
   onError?: (error: unknown) => void
@@ -2489,14 +2685,17 @@ export class SecApiFilingStream {
     this.ws.onmessage = (event) => {
       try {
         const data = JSON.parse(typeof event.data === "string" ? event.data : "")
+        if (typeof data.cursor === "string" && data.cursor.trim()) this.lastCursor = data.cursor
         if (data.event === "filing.published") {
-          if (data.cursor) this.lastCursor = data.cursor
           this.opts.onFiling?.(data as FilingStreamEvent)
+          this.opts.onEvent?.(data)
         } else if (data.event === "connected") {
           this.backoffMs = 1_000
           this.opts.onConnected?.(data as StreamConnectedEvent)
         } else if (data.event === "rate_limited") {
           this.opts.onRateLimited?.(data as StreamRateLimitedEvent)
+        } else {
+          this.opts.onEvent?.(data)
         }
       } catch (err) {
         this.opts.onError?.(err)

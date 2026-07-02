@@ -60,7 +60,7 @@ The SDK retries transient failures with exponential backoff and jitter. Defaults
 
 - Auto-retried by default: `GET`, `HEAD`, `OPTIONS`
 - Opt-in required: `POST`, `PUT`, `PATCH`, `DELETE`, MCP `tools/call`
-- Always retried regardless of method: `429` rate limits, with `Retry-After` honored
+- Always retried regardless of method: `429` rate limits, with `Retry-After` or structured retry timing honored
 - Retryable failures: network errors, `408`, `429`, `502`, `503`, `504`
 - Never retried: `400`, `401`, `403`, `404`, `422`
 - Backoff: base `200ms`, max `5s`, max retries `3`, total budget `30s`
@@ -144,11 +144,31 @@ const history = await client.factors.history("VALUE", {
   range: "1y",
   response_mode: "compact",
 })
+const macroStatus = await client.macro.status({
+  country: "US",
+  response_mode: "compact",
+})
+const briefing = await client.macro.briefing({
+  country: "US",
+  symbols: ["AAPL", "NVDA"],
+  briefingMode: "company",
+})
+const stressScenarios = await client.portfolio.stressScenarios({
+  country: "US",
+  response_mode: "compact",
+})
+const sensitivity = await client.factors.macroSensitivity({
+  country: "US",
+  scenario_key: "higher_for_longer",
+  factors: ["VALUE", "QUALITY"],
+  response_mode: "compact",
+})
 ```
 
 Available namespaces include `entities`, `filings`, `sections`, `search`, and
-`factors`. These namespaces are curated for common discovery workflows; the flat
-methods remain the exhaustive SDK surface.
+`factors`, plus macro and portfolio helpers for agent workflows. These namespaces
+are curated for common discovery workflows; the flat methods remain the
+exhaustive SDK surface.
 
 ### Live agent workflow example
 

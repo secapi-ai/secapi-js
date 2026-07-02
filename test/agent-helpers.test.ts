@@ -175,6 +175,110 @@ describe("SecApiClient agent helpers", () => {
     }
   })
 
+  test("default clients keep API key precedence over ambient bearer tokens", async () => {
+    const previous = {
+      apiKey: process.env.SECAPI_API_KEY,
+      bearerToken: process.env.SECAPI_BEARER_TOKEN,
+    }
+    const seen: Array<{ authorization: string | null; apiKey: string | null }> = []
+    try {
+      process.env.SECAPI_API_KEY = "env_api_key_must_not_leak"
+      process.env.SECAPI_BEARER_TOKEN = "env_bearer_token"
+
+      const client = new SecApiClient({
+        telemetry: false,
+        fetch: async (_url, init) => {
+          const headers = new Headers(init?.headers)
+          seen.push({
+            authorization: headers.get("authorization"),
+            apiKey: headers.get("x-api-key"),
+          })
+          return jsonResponse({ ok: true })
+        },
+      })
+
+      await client.latestFiling({ ticker: "AAPL", form: "10-K" })
+
+      expect(seen).toEqual([
+        {
+          authorization: null,
+          apiKey: "env_api_key_must_not_leak",
+        },
+      ])
+    } finally {
+      if (previous.apiKey === undefined) delete process.env.SECAPI_API_KEY
+      else process.env.SECAPI_API_KEY = previous.apiKey
+      if (previous.bearerToken === undefined) delete process.env.SECAPI_BEARER_TOKEN
+      else process.env.SECAPI_BEARER_TOKEN = previous.bearerToken
+    }
+  })
+
+  test("explicit bearer-token clients do not inherit ambient API key credentials", async () => {
+    const previous = {
+      apiKey: process.env.SECAPI_API_KEY,
+      bearerToken: process.env.SECAPI_BEARER_TOKEN,
+    }
+    const seen: Array<{ authorization: string | null; apiKey: string | null }> = []
+    try {
+      process.env.SECAPI_API_KEY = "env_api_key_must_not_leak"
+      delete process.env.SECAPI_BEARER_TOKEN
+
+      const client = new SecApiClient({
+        bearerToken: "explicit_bearer_token",
+        telemetry: false,
+        fetch: async (_url, init) => {
+          const headers = new Headers(init?.headers)
+          seen.push({
+            authorization: headers.get("authorization"),
+            apiKey: headers.get("x-api-key"),
+          })
+          return jsonResponse({ ok: true })
+        },
+      })
+
+      await client.latestFiling({ ticker: "AAPL", form: "10-K" })
+
+      expect(seen).toEqual([
+        {
+          authorization: "Bearer explicit_bearer_token",
+          apiKey: null,
+        },
+      ])
+    } finally {
+      if (previous.apiKey === undefined) delete process.env.SECAPI_API_KEY
+      else process.env.SECAPI_API_KEY = previous.apiKey
+      if (previous.bearerToken === undefined) delete process.env.SECAPI_BEARER_TOKEN
+      else process.env.SECAPI_BEARER_TOKEN = previous.bearerToken
+    }
+  })
+
+  test("explicit API key can still accompany an explicit bearer token", async () => {
+    const seen: Array<{ authorization: string | null; apiKey: string | null }> = []
+
+    const client = new SecApiClient({
+      apiKey: "explicit_api_key",
+      bearerToken: "explicit_bearer_token",
+      telemetry: false,
+      fetch: async (_url, init) => {
+        const headers = new Headers(init?.headers)
+        seen.push({
+          authorization: headers.get("authorization"),
+          apiKey: headers.get("x-api-key"),
+        })
+        return jsonResponse({ ok: true })
+      },
+    })
+
+    await client.latestFiling({ ticker: "AAPL", form: "10-K" })
+
+    expect(seen).toEqual([
+      {
+        authorization: "Bearer explicit_bearer_token",
+        apiKey: "explicit_api_key",
+      },
+    ])
+  })
+
   test("explicit constructor auth and base URL override environment fallbacks", async () => {
     const previous = {
       apiKey: process.env.SECAPI_API_KEY,
@@ -419,6 +523,19 @@ describe("SecApiClient agent helpers", () => {
     await client.factors.catalog({ category: "style", limit: 25, response_mode: "compact", include: "trust" })
     await client.factors.history("VALUE", { range: "1y", response_mode: "compact", include: "trust,series" })
     await client.factors.dashboard({ country: "US", category: "style", ticker: "AAPL", response_mode: "compact" })
+    await client.factors.macroSensitivity({ country: "US", scenario_key: "higher_for_longer", factors: ["VALUE", "QUALITY"], response_mode: "compact" })
+    await client.macro.search({ q: "US CPI", country: "US", limit: 3 })
+    await client.macro.status({ country: "US", response_mode: "compact" })
+    await client.macro.briefing({ country: "US", symbols: ["AAPL"], briefingMode: "company" })
+    await client.macro.indicators({ country: "US", indicator: "CPIAUCSL", response_mode: "compact" })
+    await client.macro.releases({ country: "US", status: "released", limit: 3, response_mode: "compact" })
+    await client.macro.calendar({ country: "US", limit: 3, response_mode: "compact" })
+    await client.macro.forecasts({ country: "US", indicator: "CPIAUCSL", horizons: 3, response_mode: "compact" })
+    await client.macro.highSignalPack({ country: "US", response_mode: "compact" })
+    await client.macro.regimes({ country: "US", lookback: "18m", response_mode: "compact" })
+    await client.macro.creditRatings({ country: "US" })
+    await client.macro.creditRating("US")
+    await client.portfolio.stressScenarios({ country: "US", response_mode: "compact" })
 
     expect(seenUrls).toEqual([
       "https://api.secapi.ai/v1/entities/resolve?ticker=AAPL&view=agent",
@@ -428,6 +545,19 @@ describe("SecApiClient agent helpers", () => {
       "https://api.secapi.ai/v1/factors/catalog?category=style&limit=25&response_mode=compact&include=trust",
       "https://api.secapi.ai/v1/factors/history/VALUE?range=1y&response_mode=compact&include=trust%2Cseries",
       "https://api.secapi.ai/v1/factors/dashboard?country=US&category=style&ticker=AAPL&response_mode=compact",
+      "https://api.secapi.ai/v1/factors/macro-sensitivity?country=US&scenario_key=higher_for_longer&factors=VALUE%2CQUALITY&response_mode=compact",
+      "https://api.secapi.ai/v1/macro/search?q=US+CPI&country=US&limit=3",
+      "https://api.secapi.ai/v1/macro/status?country=US&response_mode=compact",
+      "https://api.secapi.ai/v1/intelligence/country-report?response_mode=compact",
+      "https://api.secapi.ai/v1/macro/indicators?country=US&indicator=CPIAUCSL&response_mode=compact",
+      "https://api.secapi.ai/v1/macro/releases?country=US&status=released&limit=3&response_mode=compact",
+      "https://api.secapi.ai/v1/macro/calendar?country=US&limit=3&response_mode=compact",
+      "https://api.secapi.ai/v1/macro/forecasts?country=US&indicator=CPIAUCSL&horizons=3&response_mode=compact",
+      "https://api.secapi.ai/v1/macro/high-signal-pack?country=US&response_mode=compact",
+      "https://api.secapi.ai/v1/macro/regimes?country=US&lookback=18m&response_mode=compact",
+      "https://api.secapi.ai/v1/macro/credit-ratings?country=US",
+      "https://api.secapi.ai/v1/macro/credit-ratings/US",
+      "https://api.secapi.ai/v1/portfolio/stress-test/scenarios?country=US&response_mode=compact",
     ])
   })
 
@@ -652,6 +782,29 @@ describe("SecApiClient agent helpers", () => {
     ])
   })
 
+  test("delivery event helpers use canonical Delivery ledger routes", async () => {
+    const seenUrls: string[] = []
+    const client = new SecApiClient({
+      telemetry: false,
+      fetch: async (url) => {
+        seenUrls.push(String(url))
+        return jsonResponse({ object: "list", data: [] })
+      },
+    })
+
+    await client.events({ type: "monitor.match", requestId: "req_1", since: "2026-06-25T00:00:00Z", limit: 5 })
+    await client.exportEvents({ type: "monitor.match", format: "ndjson", limit: 10 })
+    await client.deliveryEvents({ kind: "event", limit: 3 })
+    await client.exportDeliveryEvents({ kind: "event", format: "json", limit: 3 })
+
+    expect(seenUrls).toEqual([
+      "https://api.secapi.ai/v1/delivery/events?type=monitor.match&requestId=req_1&since=2026-06-25T00%3A00%3A00Z&limit=5",
+      "https://api.secapi.ai/v1/delivery/events/export?type=monitor.match&format=ndjson&limit=10",
+      "https://api.secapi.ai/v1/delivery/events?kind=event&limit=3",
+      "https://api.secapi.ai/v1/delivery/events/export?kind=event&format=json&limit=3",
+    ])
+  })
+
   test("callMcpTool builds a JSON-RPC tools/call envelope", async () => {
     let body: unknown
     const client = new SecApiClient({
@@ -737,12 +890,17 @@ describe("SecApiClient agent helpers", () => {
     })
 
     await client.rotateWebhookEndpointSecret("we/with spaces")
+    await client.testWebhookEndpoint("we/with spaces", { data: { source: "sdk-test" } })
     await client.listWebhookDeliveries("we/with spaces", { eventId: "evt_1", limit: 2 })
     await client.replayWebhookDelivery("we/with spaces", "del/with spaces")
 
     expect(seen).toEqual([
       {
         url: "https://api.secapi.ai/v1/webhook_endpoints/we%2Fwith%20spaces/rotate_secret",
+        method: "POST",
+      },
+      {
+        url: "https://api.secapi.ai/v1/webhook_endpoints/we%2Fwith%20spaces/test",
         method: "POST",
       },
       {
@@ -859,6 +1017,122 @@ describe("SecApiClient agent helpers", () => {
     await client.streamEvents("stream/with spaces", { cursor: "cur_1", limit: 10 })
 
     expect(seenUrls[0]).toBe("https://api.secapi.ai/v1/stream_subscriptions/stream%2Fwith%20spaces/events?cursor=cur_1&limit=10")
+  })
+
+  test("streamFilings requires a subscription-backed stream id", () => {
+    const client = new SecApiClient({ telemetry: false })
+
+    try {
+      client.streamFilings()
+      throw new Error("expected streamFilings to reject missing streamId")
+    } catch (error) {
+      expect(error).toBeInstanceOf(SecApiError)
+      expect((error as SecApiError).code).toBe("client_stream_id_required")
+    }
+  })
+
+  test("streamFilings opens the subscription-backed WebSocket URL", async () => {
+    const previousWebSocket = (globalThis as { WebSocket?: unknown }).WebSocket
+    const seenFetchUrls: string[] = []
+    const seenWebSocketUrls: string[] = []
+    const seenEvents: unknown[] = []
+    const seenFilings: unknown[] = []
+
+    class FakeWebSocket {
+      static OPEN = 1
+      static instances: FakeWebSocket[] = []
+      readyState = FakeWebSocket.OPEN
+      onmessage: ((event: { data: string }) => void) | null = null
+      onerror: ((event: unknown) => void) | null = null
+      onclose: ((event: { code: number; reason: string }) => void) | null = null
+
+      constructor(url: string) {
+        seenWebSocketUrls.push(url)
+        FakeWebSocket.instances.push(this)
+      }
+
+      send(_payload: string) {}
+
+      close(_code?: number, _reason?: string) {}
+    }
+
+    try {
+      ;(globalThis as { WebSocket?: unknown }).WebSocket = FakeWebSocket
+      const client = new SecApiClient({
+        baseUrl: "https://api.secapi.test",
+        telemetry: false,
+        fetch: async (url) => {
+          seenFetchUrls.push(String(url))
+          return jsonResponse({
+            object: "stream_ticket",
+            token: "ticket_test",
+            ticketId: "st_test",
+            issuedAt: "2026-06-25T00:00:00.000Z",
+            expiresAt: "2026-06-25T00:01:00.000Z",
+            requestId: "req_test",
+          })
+        },
+      })
+
+      const stream = client.streamFilings({
+        streamId: " str_test ",
+        forms: ["10-K", "8-K"],
+        tickers: "AAPL",
+        cursor: "cur_1",
+        autoReconnect: false,
+        onEvent: (event) => seenEvents.push(event),
+        onFiling: (event) => seenFilings.push(event),
+      })
+
+      for (let attempt = 0; attempt < 10 && seenWebSocketUrls.length === 0; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      }
+      FakeWebSocket.instances[0]?.onmessage?.({
+        data: JSON.stringify({
+          event: "connected",
+          connectionId: "wsc_test",
+          orgId: "org_test",
+          filters: { forms: [], tickers: [], eventTypes: ["monitor.match"] },
+          streamId: "str_test",
+          cursor: null,
+          serverTime: "2026-06-25T00:00:00.000Z",
+        }),
+      })
+      FakeWebSocket.instances[0]?.onmessage?.({
+        data: JSON.stringify({
+          event: "monitor.match",
+          eventId: "evt_monitor_1",
+          data: { monitorId: "mon_1", matchCount: 1 },
+          cursor: "evt_monitor_1",
+          deliveredAt: "2026-06-25T00:00:01.000Z",
+        }),
+      })
+      stream.close()
+
+      expect(seenFetchUrls).toEqual(["https://api.secapi.test/v1/stream/tickets"])
+      expect(seenWebSocketUrls.length).toBe(1)
+      const url = new URL(seenWebSocketUrls[0])
+      expect(url.origin).toBe("wss://api.secapi.test")
+      expect(url.pathname).toBe("/v1/stream/ws")
+      expect(url.searchParams.get("stream_id")).toBe("str_test")
+      expect(url.searchParams.get("ticket")).toBe("ticket_test")
+      expect(url.searchParams.get("forms")).toBe("10-K,8-K")
+      expect(url.searchParams.get("tickers")).toBe("AAPL")
+      expect(url.searchParams.get("cursor")).toBe("cur_1")
+      expect(seenEvents).toEqual([
+        {
+          event: "monitor.match",
+          eventId: "evt_monitor_1",
+          data: { monitorId: "mon_1", matchCount: 1 },
+          cursor: "evt_monitor_1",
+          deliveredAt: "2026-06-25T00:00:01.000Z",
+        },
+      ])
+      expect(seenFilings).toEqual([])
+      expect(stream.cursor).toBe("evt_monitor_1")
+    } finally {
+      ;(globalThis as { WebSocket?: unknown }).WebSocket = previousWebSocket
+    }
   })
 
   test("admin helpers escape opaque path ids", async () => {

@@ -1,5 +1,8 @@
 import { z } from "zod"
+import { DATASTREAM_EVENT_TYPES } from "./event-catalog.js"
 import { capabilityStateSchema, freshnessMetadataSchema, materializationMetadataSchema, traceKindSchema, traceStatusSchema, validationStatusSchema } from "./foundation.js"
+
+export const datastreamEventTypeSchema = z.enum(DATASTREAM_EVENT_TYPES)
 
 export const provenanceSchema = z.object({
   source: z.string(),
@@ -1571,8 +1574,8 @@ export type AnalyticsMeasure = z.infer<typeof analyticsMeasureSchema>
 
 export const analyticsQueryInputSchema = z.object({
   dataset: analyticsDatasetSchema,
-  dimensions: z.array(analyticsDimensionSchema).min(1),
-  measures: z.array(analyticsMeasureSchema).default(["count"]),
+  dimensions: z.array(analyticsDimensionSchema).min(1).max(2),
+  measures: z.array(analyticsMeasureSchema).min(1).max(1).default(["count"]),
   filters: analyticsQueryFilterSchema.optional(),
   timeWindow: analyticsTimeWindowSchema.refine(
     (tw) => !(tw.from && tw.to && tw.from > tw.to),
@@ -1643,7 +1646,7 @@ export const webhookEndpointSchema = z.object({
   orgId: z.string(),
   description: z.string().nullable(),
   destinationUrl: z.string().url(),
-  subscribedEventTypes: z.array(z.enum(["artifact.created", "artifact.reconciled", "filing.published", "monitor.match", "webhook_endpoint.created", "stream_subscription.created"])),
+  subscribedEventTypes: z.array(datastreamEventTypeSchema),
   status: z.enum(["active", "disabled"]),
   lastDeliveredAt: z.string().nullable(),
   signingSecret: z.string().optional(),
@@ -1656,7 +1659,7 @@ export const webhookDeliveryAttemptSchema = z.object({
   orgId: z.string(),
   webhookId: z.string(),
   eventId: z.string(),
-  eventType: z.enum(["artifact.created", "artifact.reconciled", "filing.published", "monitor.match", "webhook_endpoint.created", "stream_subscription.created"]),
+  eventType: datastreamEventTypeSchema,
   destinationUrl: z.string().url(),
   status: z.number().int().nullable(),
   ok: z.boolean(),
@@ -1676,7 +1679,7 @@ export const webhookDeliveryReplaySchema = z.object({
     deliveryId: z.string().optional(),
     recordedAt: z.string(),
     eventId: z.string(),
-    eventType: z.enum(["artifact.created", "artifact.reconciled", "filing.published", "monitor.match", "webhook_endpoint.created", "stream_subscription.created"]),
+    eventType: datastreamEventTypeSchema,
     webhookId: z.string(),
     destinationUrl: z.string().url(),
     status: z.number().int().nullable(),
@@ -1696,7 +1699,7 @@ export const streamSubscriptionSchema = z.object({
   livemode: z.boolean(),
   orgId: z.string(),
   description: z.string().nullable(),
-  eventTypes: z.array(z.enum(["artifact.created", "artifact.reconciled", "filing.published", "monitor.match", "webhook_endpoint.created", "stream_subscription.created"])),
+  eventTypes: z.array(datastreamEventTypeSchema),
   transport: z.enum(["poll", "webhook_mirror", "websocket"]),
   status: z.enum(["active", "paused"]),
   cursor: z.string().nullable(),
@@ -1718,7 +1721,8 @@ export const streamEventSchema = z.object({
   cursor: z.string(),
   recordedAt: z.string(),
   requestId: z.string(),
-  eventType: z.enum(["artifact.created", "artifact.reconciled", "filing.published", "monitor.match", "webhook_endpoint.created", "stream_subscription.created"]),
+  eventType: datastreamEventTypeSchema,
+  event: z.record(z.string(), z.unknown()).nullable().optional(),
   transport: z.enum(["poll", "webhook_mirror", "websocket"]),
   replayable: z.boolean(),
 })
@@ -2352,9 +2356,6 @@ export const errorSchema = z.object({
   type: z.string(),
   message: z.string(),
   requestId: z.string(),
-  traceparent: z.string().optional(),
-  hint: z.string().optional(),
-  docsUrl: z.string().optional(),
   details: z.record(z.string(), z.unknown()).default({}),
 })
 
