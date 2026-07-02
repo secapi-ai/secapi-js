@@ -1,10 +1,10 @@
 /**
  * Anthropic Claude per-token rates (USD per 1 million tokens).
  *
- * Source of truth for the chat front-end's running cost meter.
- * Hard-coded; refresh on a quarterly cadence as Anthropic publishes new
- * tiers. `effectiveAt` lets callers reason about historical rates without
- * needing a full time-series store today.
+ * Source of truth for eval-harness model cost accounting. Hard-coded; refresh
+ * on a quarterly cadence as Anthropic publishes new tiers. `effectiveAt` lets
+ * callers reason about historical rates without needing a full time-series
+ * store today.
  *
  * If `claude-haiku-4-5-20251001` ships under a different priced SKU at
  * publish time, update both the constant and `effectiveAt`.
@@ -55,9 +55,8 @@ export const MODEL_RATES: Record<string, ModelRate> = {
     // Sonnet 4.5 is the canonical eval-loop + free-text-judge model
     // (`OMNI_EVAL_AGENT_MODEL` / `OMNI_EVAL_JUDGE_MODEL` default in
     // scripts/eval/run_evals.py and scripts/evals/judge_free_text.py).
-    // OMNI-3286 added it here so the agent-chat eval endpoint's
-    // server-side `computeCostUsd` resolves a real rate rather than
-    // falling through to the warning-emitting fallback.
+    // Keeping it explicit prevents the eval harness from falling through to the
+    // warning-emitting fallback during comparison-sensitive runs.
     modelId: "claude-sonnet-4-5",
     inputUsdPerMillion: 3,
     outputUsdPerMillion: 15,

@@ -13,6 +13,7 @@ const objectExampleBySchema: Record<string, string> = {
 const exampleAsOf = "2026-06-09T22:15:00.000Z"
 const exampleSnapshotAt = "2026-06-09T19:45:00.000Z"
 const exampleDataDate = "2026-06-09"
+const exampleResearchScenarioDisclosures = ["Research scenario only. Not investment advice or a recommendation to trade."]
 
 const exampleTrustMetadata = {
   dataAsOf: exampleDataDate,
@@ -286,6 +287,7 @@ const examplePortfolioAnalysis = {
   ],
   selectedCandidate: null,
   optimizerDisclosures: ["Optimizer output is a deterministic scenario, not investment advice."],
+  disclosures: exampleResearchScenarioDisclosures,
   summaryMd: "Portfolio is growth and quality tilted with a moderate negative value exposure.",
   responseMode: "compact",
   ...exampleTrustMetadata,
@@ -354,6 +356,7 @@ const examplePortfolioAttribution = {
     files: [],
   },
   summaryMd: "Momentum and quality explained most of the recent return while value detracted.",
+  disclosures: exampleResearchScenarioDisclosures,
   responseMode: "compact",
   ...exampleTrustMetadata,
   methodologyVersion: "secapi_portfolio_attribution_v1",
@@ -411,7 +414,8 @@ const examplePortfolioHedge = {
   exposures: [exampleExposure],
   optimizationNotes: ["Hedge candidates are bounded by liquidity and max total hedge weight."],
   factorNeutralPlan: ["Add VLUE at 8% funded pro rata from overweight growth names."],
-  summaryMd: "The suggested hedge reduces negative VALUE beta while keeping total hedge weight under 20%.",
+  summaryMd: "The hedge candidate reduces negative VALUE beta while keeping total hedge weight under 20%.",
+  disclosures: exampleResearchScenarioDisclosures,
   responseMode: "compact",
   ...exampleTrustMetadata,
   methodologyVersion: "secapi_portfolio_hedge_v1",
@@ -1056,7 +1060,8 @@ const responseExampleBySchema: Record<string, unknown> = {
         rationale: "Low volatility trails in the current risk-on regime.",
       },
     ],
-    summaryMd: "Rotate toward value and momentum while low volatility trails in the current regime.",
+    summaryMd: "Research scenario tilts toward value and momentum while low volatility trails in the current regime.",
+    disclosures: exampleResearchScenarioDisclosures,
     responseMode: "compact",
     ...exampleTrustMetadata,
   },
@@ -1355,6 +1360,365 @@ const jsonRequestBody = (name: string, description?: string) => ({
   },
 })
 
+const inlineJsonRequestBody = (schema: Record<string, unknown>, value: Record<string, unknown>, description?: string) => ({
+  requestBody: {
+    required: true,
+    ...(description ? { description } : {}),
+    content: {
+      "application/json": {
+        schema,
+        examples: {
+          default: {
+            summary: "Copy-pasteable request",
+            value,
+          },
+        },
+      },
+    },
+  },
+})
+
+const inlineJsonResponse = (
+  schema: Record<string, unknown>,
+  value: Record<string, unknown>,
+  description = "Successful response",
+  status = "200",
+) => ({
+  responses: {
+    [status]: {
+      description,
+      content: {
+        "application/json": {
+          schema,
+          examples: {
+            default: {
+              summary: "Example response",
+              value,
+            },
+          },
+        },
+      },
+    },
+  },
+})
+
+const billingRatesResponseSchema = {
+  type: "object",
+  additionalProperties: true,
+  required: ["object", "requestId", "version", "starterGrant", "plans"],
+  properties: {
+    object: { type: "string", const: "pricing_catalog" },
+    requestId: { type: "string" },
+    version: { type: "string" },
+    starterGrant: {
+      type: "object",
+      additionalProperties: true,
+      required: ["object", "planKey", "billingState", "calls", "renewable", "overflowPlanKey"],
+      properties: {
+        object: { type: "string", const: "starter_grant" },
+        planKey: { type: "string", const: "sandbox_grant" },
+        billingState: { type: "string", const: "sandbox_grant" },
+        calls: { type: "integer" },
+        renewable: { type: "boolean" },
+        period: { type: ["string", "null"] },
+        overflowPlanKey: { type: "string" },
+        note: { type: "string" },
+      },
+    },
+    plans: { type: "array", items: { type: "object", additionalProperties: true } },
+  },
+}
+
+const billingRatesResponseExample = {
+  object: "pricing_catalog",
+  requestId: "req_example_123",
+  version: "2026-06-18",
+  starterGrant: {
+    object: "starter_grant",
+    planKey: "sandbox_grant",
+    billingState: "sandbox_grant",
+    calls: 150,
+    renewable: false,
+    period: null,
+    overflowPlanKey: "payg",
+    note: "New organizations start on the starter grant; usage beyond the grant falls through to Pay As You Go rates once billing is activated.",
+  },
+  plans: [
+    {
+      key: "payg",
+      displayName: "Pay As You Go",
+      kind: "metered",
+      meterFamilyPrices: [
+        {
+          key: "standard_reads",
+          unitAmountUsd: 0.02,
+        },
+      ],
+    },
+  ],
+}
+
+const createApiKeyRequestSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    label: { type: ["string", "null"] },
+  },
+}
+
+const createApiKeyResponseSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["object", "id", "createdAt", "livemode", "orgId", "label", "keyPrefix", "scopes", "status", "lastUsedAt", "secret"],
+  properties: {
+    object: { type: "string", const: "api_key" },
+    id: { type: "string" },
+    createdAt: { type: "string" },
+    livemode: { type: "boolean" },
+    orgId: { type: "string" },
+    label: { type: ["string", "null"] },
+    keyPrefix: { type: "string" },
+    scopes: { type: "array", items: { type: "string" } },
+    status: { type: "string", enum: ["active", "revoked"] },
+    lastUsedAt: { type: ["string", "null"] },
+    secret: { type: "string" },
+  },
+}
+
+const createApiKeyResponseExample = {
+  object: "api_key",
+  id: "key_123",
+  createdAt: "2026-06-27T21:00:00.000Z",
+  livemode: false,
+  orgId: "org_123",
+  label: "local-dev",
+  keyPrefix: "secapi_live_abcd",
+  scopes: ["read:sec"],
+  status: "active",
+  lastUsedAt: null,
+  secret: "secapi_live_abcd...copy_this_once",
+}
+
+const webhookEndpointRequestSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["destinationUrl"],
+  properties: {
+    destinationUrl: { type: "string", format: "uri", description: "Public HTTPS endpoint URL. Self-serve endpoints must use default HTTPS port 443." },
+    description: { type: ["string", "null"] },
+    subscribedEventTypes: { type: "array", items: { type: "string" }, description: "Delivery event types from GET /v1/event_types. Supports exact event names, `*`, and namespace wildcards such as `monitor.*`." },
+    livemode: { type: "boolean", default: false },
+  },
+}
+
+const webhookEndpointUpdateRequestSchema = {
+  type: "object",
+  additionalProperties: false,
+  minProperties: 1,
+  properties: {
+    destinationUrl: { type: "string", format: "uri" },
+    description: { type: ["string", "null"] },
+    subscribedEventTypes: { type: "array", items: { type: "string" } },
+    status: { type: "string", enum: ["active", "disabled"] },
+  },
+}
+
+const webhookEndpointTestRequestSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    eventType: { type: "string", const: "webhook.test", default: "webhook.test" },
+    data: { type: "object", additionalProperties: true },
+  },
+}
+
+const webhookEndpointExample = {
+  object: "webhook_endpoint",
+  id: "wh_2ZK8Q1W9F4M6P7R3",
+  createdAt: "2026-06-25T15:00:00.000Z",
+  updatedAt: "2026-06-25T15:00:00.000Z",
+  livemode: false,
+  orgId: "org_example_123",
+  description: "Production monitor matches",
+  destinationUrl: "https://example.com/hooks/secapi",
+  subscribedEventTypes: ["monitor.match", "webhook.test"],
+  status: "active",
+  lastDeliveredAt: null,
+}
+
+const webhookEndpointCreateExample = {
+  ...webhookEndpointExample,
+  signingSecret: "whsec_example_reveal_once_on_create_or_rotate",
+}
+
+const webhookEndpointResponseSchema = {
+  allOf: [schemaRef("WebhookEndpoint")],
+  additionalProperties: true,
+}
+
+const webhookEndpointDeleteResponseSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["object", "id", "deleted", "requestId"],
+  properties: {
+    object: { type: "string", const: "webhook_endpoint.deleted" },
+    id: { type: "string" },
+    deleted: { type: "boolean" },
+    requestId: { type: "string" },
+  },
+}
+
+const webhookEndpointDeleteResponseExample = {
+  object: "webhook_endpoint.deleted",
+  id: "wh_2ZK8Q1W9F4M6P7R3",
+  deleted: true,
+  requestId: "req_2ZK8Q1W9F4M6P7R3",
+}
+
+const webhookTestResponseSchema = {
+  type: "object",
+  additionalProperties: true,
+  required: ["object", "event", "delivery"],
+  properties: {
+    object: { type: "string", const: "webhook_test" },
+    event: { type: "object", additionalProperties: true },
+    delivery: { type: "object", additionalProperties: true },
+  },
+}
+
+const webhookTestResponseExample = {
+  object: "webhook_test",
+  event: {
+    object: "event",
+    id: "evt_webhook_test_123",
+    type: "webhook.test",
+    createdAt: "2026-06-25T15:01:00.000Z",
+    livemode: false,
+    orgId: "org_example_123",
+    requestId: "req_2ZK8Q1W9F4M6P7R3",
+    data: {
+      message: "SEC API webhook test",
+      webhookId: "wh_2ZK8Q1W9F4M6P7R3",
+      requestedBy: "delivery_api",
+    },
+  },
+  delivery: {
+    kind: "webhook_delivery",
+    recordedAt: "2026-06-25T15:01:00.250Z",
+    orgId: "org_example_123",
+    eventId: "evt_webhook_test_123",
+    eventType: "webhook.test",
+    webhookId: "wh_2ZK8Q1W9F4M6P7R3",
+    destinationUrl: "https://example.com/hooks/secapi",
+    status: 200,
+    ok: true,
+    requestId: "req_2ZK8Q1W9F4M6P7R3",
+    error: null,
+    latencyMs: 250,
+    replayedFromDeliveryId: null,
+  },
+}
+
+const streamSubscriptionRequestSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    description: { type: ["string", "null"] },
+    eventTypes: { type: "array", items: { type: "string" }, description: "Delivery event types from GET /v1/event_types. Supports exact event names, `*`, and namespace wildcards such as `monitor.*`." },
+    transport: { type: "string", enum: ["poll", "webhook_mirror", "websocket"], default: "poll" },
+    livemode: { type: "boolean", default: false },
+  },
+}
+
+const streamSubscriptionUpdateRequestSchema = {
+  type: "object",
+  additionalProperties: false,
+  minProperties: 1,
+  properties: {
+    description: { type: ["string", "null"] },
+    eventTypes: { type: "array", items: { type: "string" } },
+    transport: { type: "string", enum: ["poll", "webhook_mirror", "websocket"] },
+    status: { type: "string", enum: ["active", "paused"] },
+  },
+}
+
+const streamSubscriptionExample = {
+  object: "stream_subscription",
+  id: "strm_2ZK8Q1W9F4M6P7R3",
+  createdAt: "2026-06-25T15:00:00.000Z",
+  updatedAt: "2026-06-25T15:00:00.000Z",
+  livemode: false,
+  orgId: "org_example_123",
+  description: "Monitor matches polling stream",
+  eventTypes: ["monitor.match", "webhook.test"],
+  transport: "poll",
+  status: "active",
+  cursor: null,
+  lastEventAt: null,
+}
+
+const streamSubscriptionResponseSchema = {
+  allOf: [schemaRef("StreamSubscription")],
+  additionalProperties: true,
+}
+
+const streamSubscriptionDeleteResponseSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["object", "id", "deleted", "requestId"],
+  properties: {
+    object: { type: "string", const: "stream_subscription.deleted" },
+    id: { type: "string" },
+    deleted: { type: "boolean" },
+    requestId: { type: "string" },
+  },
+}
+
+const streamSubscriptionDeleteResponseExample = {
+  object: "stream_subscription.deleted",
+  id: "strm_2ZK8Q1W9F4M6P7R3",
+  deleted: true,
+  requestId: "req_2ZK8Q1W9F4M6P7R3",
+}
+
+const paygEnableRequestSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["amountUsd"],
+  properties: {
+    amountUsd: { type: "number", minimum: 5, description: "Initial prepaid credit amount to purchase while enabling PAYG." },
+    autoTopupThresholdCents: { type: "integer", minimum: 1, description: "Optional low-balance threshold, in cents, that enables auto-top-up after payment succeeds." },
+    autoTopupAmountCents: { type: "integer", minimum: 500, description: "Optional refill amount, in cents, used with autoTopupThresholdCents." },
+  },
+}
+
+const paygEnableResponseSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["object", "clientSecret", "paymentIntentId", "breakdown", "requestId"],
+  properties: {
+    object: { type: "string", const: "payg_enable_intent" },
+    clientSecret: { type: "string" },
+    paymentIntentId: { type: "string" },
+    breakdown: { type: "object", additionalProperties: true },
+    requestId: { type: "string" },
+  },
+}
+
+const paygEnableResponseExample = {
+  object: "payg_enable_intent",
+  clientSecret: "pi_example_secret_example",
+  paymentIntentId: "pi_example",
+  breakdown: {
+    creditsCents: 1000,
+    discountCents: 0,
+    feeCents: 30,
+    totalChargeCents: 1030,
+    currency: "usd",
+  },
+  requestId: "req_2ZK8Q1W9F4M6P7R3",
+}
+
 const factorResponseParameters = [
   {
     name: "response_mode",
@@ -1375,6 +1739,37 @@ const factorResponseParameters = [
 const factorResponseParams = (parameters: readonly Record<string, unknown>[] = [], options: { responseModeDefault?: "compact" | "standard" | "verbose" } = {}) => [
   ...parameters,
   ...factorResponseParameters.map((parameter) => {
+    if (parameter.name !== "response_mode" || !options.responseModeDefault) return parameter
+    return {
+      ...parameter,
+      schema: {
+        ...parameter.schema,
+        default: options.responseModeDefault,
+      },
+    }
+  }),
+]
+
+const macroResponseParameters = [
+  {
+    name: "response_mode",
+    in: "query",
+    required: false,
+    schema: { type: "string", enum: ["compact", "standard", "verbose", "agent"], default: "standard" },
+    description: "Response projection. compact is token-efficient for agents; standard preserves the full launched shape; verbose is reserved for full trust/drill-down expansions. agent aliases compact.",
+  },
+  {
+    name: "include",
+    in: "query",
+    required: false,
+    schema: { type: "string" },
+    description: "Comma-separated compact-mode expansions such as trust, metadata, series, releases, calendar, forecasts, or source_plan.",
+  },
+] as const
+
+const macroResponseParams = (parameters: readonly Record<string, unknown>[] = [], options: { responseModeDefault?: "compact" | "standard" | "verbose" } = {}) => [
+  ...parameters,
+  ...macroResponseParameters.map((parameter) => {
     if (parameter.name !== "response_mode" || !options.responseModeDefault) return parameter
     return {
       ...parameter,
@@ -1456,6 +1851,91 @@ const filingCikQueryParameter = {
   description: "Issuer Central Index Key. Use ticker, symbol, or cik to scope issuer-specific filing lookups.",
 } as const
 
+const deliveryLedgerQueryParameters = [
+  { name: "kind", in: "query", required: false, schema: { type: "string", enum: ["event", "webhook_delivery", "stream_event"] }, description: "Filter to one Delivery ledger record family." },
+  { name: "type", in: "query", required: false, schema: { type: "string" }, description: "Filter by canonical event type, for example filing.published." },
+  { name: "requestId", in: "query", required: false, schema: { type: "string" }, description: "Filter by producer request id." },
+  { name: "since", in: "query", required: false, schema: { type: "string", format: "date-time" }, description: "Return records recorded at or after this timestamp." },
+  { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 1000, default: 25 }, description: "Maximum records to return." },
+] as const
+
+const deliveryLedgerRecordSchema = {
+  type: "object",
+  additionalProperties: true,
+  properties: {
+    kind: { type: "string", enum: ["event", "webhook_delivery", "stream_event"] },
+    recordedAt: { type: "string", format: "date-time" },
+    orgId: { type: ["string", "null"] },
+    eventId: { type: "string" },
+    eventType: { type: "string" },
+    requestId: { type: "string" },
+  },
+} as const
+
+const deliveryLedgerListResponse = {
+  responses: {
+    "200": {
+      description: "Delivery ledger records for the current organization.",
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            required: ["object", "data", "hasMore", "nextCursor"],
+            properties: {
+              object: { type: "string", const: "list" },
+              data: { type: "array", items: deliveryLedgerRecordSchema },
+              hasMore: { type: "boolean" },
+              nextCursor: { type: ["string", "null"] },
+            },
+          },
+        },
+      },
+    },
+    "503": { description: "Delivery ledger is temporarily unavailable." },
+  },
+} as const
+
+const streamEventPageResponse = {
+  responses: {
+    "200": {
+      description: "Cursor page of delivered stream events.",
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            required: ["object", "streamId", "data", "hasMore", "nextCursor", "replayCursor"],
+            properties: {
+              object: { type: "string", const: "stream_event_page" },
+              streamId: { type: "string" },
+              data: {
+                type: "array",
+                items: {
+                  type: "object",
+                  additionalProperties: true,
+                  properties: {
+                    object: { type: "string", const: "stream_event" },
+                    id: { type: "string" },
+                    cursor: { type: "string" },
+                    recordedAt: { type: "string", format: "date-time" },
+                    requestId: { type: "string" },
+                    eventType: { type: "string" },
+                    transport: { type: "string", enum: ["poll", "webhook_mirror", "websocket"] },
+                  },
+                },
+              },
+              hasMore: { type: "boolean" },
+              nextCursor: { type: ["string", "null"] },
+              replayCursor: { type: ["string", "null"] },
+              requestId: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+    "503": { description: "Delivery ledger is temporarily unavailable." },
+  },
+} as const
+
 export const openApiDocument = {
   openapi: "3.1.0",
   info: {
@@ -1480,46 +1960,46 @@ export const openApiDocument = {
       get: { summary: "Return the current organization profile" },
     },
     "/v1/admin/orgs": {
-      get: { summary: "List operator-visible organizations with support-safe plan, usage, and recent activity summaries" },
+      get: { summary: "List admin-visible organizations with support-safe plan, usage, and recent activity summaries" },
     },
     "/v1/admin/orgs/{org_id}": {
-      get: { summary: "Return an operator-facing organization snapshot with API keys, billing, usage, events, webhooks, streams, and delivery state" },
+      get: { summary: "Return an admin-facing organization snapshot with API keys, billing, usage, events, webhooks, streams, and delivery state" },
     },
     "/v1/admin/orgs/{org_id}/requests/{request_id}": {
-      get: { summary: "Return operator-scoped request diagnostics for a tenant request identifier" },
+      get: { summary: "Return admin-scoped request diagnostics for a tenant request identifier" },
     },
     "/v1/admin/orgs/{org_id}/deliveries/summary": {
-      get: { summary: "Return operator-scoped delivery aggregates for webhook and stream activity within a tenant" },
+      get: { summary: "Return admin-scoped delivery aggregates for webhook and stream activity within a tenant" },
     },
     "/v1/admin/maintenance/hot-lane": {
-      post: { summary: "Run operator-scoped hot-lane polling to enqueue fresh SEC publication observations" },
+      post: { summary: "Run admin-scoped hot-lane polling to enqueue fresh SEC publication observations" },
     },
     "/v1/admin/maintenance/reconcile-hot": {
-      post: { summary: "Run operator-scoped reconcile work to enqueue missing live hot-lane filings" },
+      post: { summary: "Run admin-scoped reconcile work to enqueue missing live hot-lane filings" },
     },
     "/v1/admin/maintenance/ingest-worker": {
-      post: { summary: "Run operator-scoped ingest worker passes to materialize queued filing artifacts and sections" },
+      post: { summary: "Run admin-scoped ingest worker passes to materialize queued filing artifacts and sections" },
     },
     "/v1/admin/maintenance/ingest-queue": {
-      post: { summary: "Export an operator-scoped ingest queue and checkpoint summary from the running SEC API service" },
+      post: { summary: "Export an admin-scoped ingest queue and checkpoint summary from the running SEC API service" },
     },
     "/v1/admin/maintenance/warm-market-latest": {
       post: { summary: "Warm search-visible manifests for the latest market-wide SEC filings by core form" },
     },
     "/v1/admin/maintenance/warm-market-data": {
-      post: { summary: "Warm operator-scoped market snapshots, reference, estimates, bars, and corporate-action caches for covered symbols" },
+      post: { summary: "Warm admin-scoped market snapshots, reference, estimates, bars, and corporate-action caches for covered symbols" },
     },
     "/v1/admin/maintenance/warm-macro-data": {
-      post: { summary: "Bootstrap operator-scoped Tier-1 macro materialization for launch countries" },
+      post: { summary: "Bootstrap admin-scoped Tier-1 macro materialization for launch countries" },
     },
     "/v1/admin/maintenance/warm-factor-data": {
-      post: { summary: "Warm operator-scoped factor returns, exposures, and correlations for covered symbols and factor categories" },
+      post: { summary: "Warm admin-scoped factor returns, exposures, and correlations for covered symbols and factor categories" },
     },
     "/v1/admin/maintenance/warm-factor-intraday": {
-      post: { summary: "Warm operator-scoped intraday factor snapshots for supported categories and windows" },
+      post: { summary: "Warm admin-scoped intraday factor snapshots for supported categories and windows" },
     },
     "/v1/admin/maintenance/company-mapping-identifiers": {
-      post: { summary: "Backfill FIGI-family and security identifier coverage into the canonical entity store from operator-supplied universe rows" },
+      post: { summary: "Backfill FIGI-family and security identifier coverage into the canonical entity store from admin-supplied universe rows" },
     },
     "/v1/billing/webhooks/stripe": {
       post: { summary: "Receive and process signed Stripe subscription lifecycle webhooks" },
@@ -1576,7 +2056,14 @@ export const openApiDocument = {
       },
     },
     "/v1/billing/rates": {
-      get: { summary: "Return the public pricing catalog, plan metadata, and meter-family launch rates" },
+      get: {
+        summary: "Return the public pricing catalog, starter grant metadata, plan metadata, and meter-family launch rates",
+        ...inlineJsonResponse(
+          billingRatesResponseSchema,
+          billingRatesResponseExample,
+          "Public pricing catalog including machine-readable starter grant metadata.",
+        ),
+      },
     },
     "/v1/billing/credits": {
       get: { summary: "Return the current organization's prepaid credit balance, auto-top-up settings, lifetime totals, and low-balance status" },
@@ -1652,11 +2139,16 @@ export const openApiDocument = {
       },
       delete: { summary: "Remove a saved payment method from the current organization" },
     },
-    "/v1/billing/payg/activate": {
-      post: { summary: "Create a Stripe Checkout setup session that activates Pay As You Go card-on-file billing" },
-    },
     "/v1/billing/payg/enable": {
-      post: { summary: "Enable pay-as-you-go in one flow: save a card, make an initial credit top-up, and optionally turn on auto-top-up (returns a PaymentIntent client secret)" },
+      post: {
+        summary: "Enable pay-as-you-go in one flow: save a card, make an initial credit top-up, and optionally turn on auto-top-up (returns a PaymentIntent client secret)",
+        ...inlineJsonRequestBody(paygEnableRequestSchema, {
+          amountUsd: 10,
+          autoTopupThresholdCents: 1000,
+          autoTopupAmountCents: 2500,
+        }),
+        ...inlineJsonResponse(paygEnableResponseSchema, paygEnableResponseExample, "PAYG enable PaymentIntent created.", "201"),
+      },
     },
     "/v1/billing/grant/reset": {
       post: { summary: "Re-grant the one-time free starter allowance (resets free-grant usage), rate-limited to once per rolling 30 days per organization" },
@@ -1675,7 +2167,20 @@ export const openApiDocument = {
     },
     "/v1/api_keys": {
       get: { summary: "List API keys for the current organization" },
-      post: { summary: "Create a new API key for the current organization" },
+      post: {
+        summary: "Create a new API key for the current organization and reveal its secret exactly once",
+        ...inlineJsonRequestBody(
+          createApiKeyRequestSchema,
+          { label: "local-dev" },
+          "Optional API key label. Scopes and livemode are derived server-side for the current organization.",
+        ),
+        ...inlineJsonResponse(
+          createApiKeyResponseSchema,
+          createApiKeyResponseExample,
+          "API key created. The `secret` field is revealed exactly once in this response.",
+          "201",
+        ),
+      },
     },
     "/v1/agent/bootstrap_tokens": {
       post: { summary: "Issue a short-lived, single-use sponsor token for agent bootstrap under the current organization" },
@@ -1763,11 +2268,91 @@ export const openApiDocument = {
         ...jsonResponse("DashboardUsageActivity"),
       },
     },
-    "/v1/events": {
-      get: { summary: "List canonical event, webhook delivery, and stream records for the current organization" },
+    "/v1/event_types": {
+      get: {
+        summary: "List Delivery event types, producer status, replay support, retention, and billing family metadata",
+        parameters: [
+          { name: "status", in: "query", required: false, schema: { type: "string", enum: ["public_emitting", "internal", "reserved"] }, description: "Filter the catalog by producer status." },
+        ],
+        responses: {
+          "200": {
+            description: "Delivery event type catalog.",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["object", "data", "requestId"],
+                  properties: {
+                    object: { type: "string", const: "event_type_catalog" },
+                    data: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        additionalProperties: true,
+                        required: ["type", "status", "schemaVersion", "billingFamily"],
+                        properties: {
+                          type: { type: "string" },
+                          status: { type: "string", enum: ["public_emitting", "internal", "reserved"] },
+                          description: { type: "string" },
+                          schemaVersion: { type: "string" },
+                          producer: { type: "string" },
+                          filterable: { type: "boolean" },
+                          replaySupport: { type: "string" },
+                          retention: { type: "string" },
+                          billingFamily: { type: "string", description: "Meter family used when this event is delivered through a customer webhook, stream, or email transport." },
+                          transports: { type: "array", items: { type: "string" } },
+                          samplePayload: { type: "object", additionalProperties: true },
+                        },
+                      },
+                    },
+                    requestId: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+          "400": { description: "Invalid status filter." },
+        },
+      },
     },
-    "/v1/events/export": {
-      get: { summary: "Export filtered canonical events as JSON or NDJSON for support and operations" },
+    "/v1/delivery/events": {
+      get: {
+        summary: "List durable Delivery ledger, webhook delivery, and stream records for the current organization",
+        parameters: deliveryLedgerQueryParameters,
+        ...deliveryLedgerListResponse,
+      },
+    },
+    "/v1/delivery/events/export": {
+      get: {
+        summary: "Export durable Delivery ledger records as JSON or NDJSON",
+        parameters: [
+          ...deliveryLedgerQueryParameters,
+          { name: "format", in: "query", required: false, schema: { type: "string", enum: ["json", "ndjson"], default: "json" }, description: "Export format. ndjson returns application/x-ndjson." },
+        ],
+        responses: {
+          "200": {
+            description: "Delivery ledger export.",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["object", "format", "count", "content"],
+                  properties: {
+                    object: { type: "string", const: "event_export" },
+                    format: { type: "string", const: "json" },
+                    count: { type: "integer" },
+                    content: { type: "string", description: "Pretty-printed JSON array of ledger records." },
+                  },
+                },
+              },
+              "application/x-ndjson": {
+                schema: { type: "string", description: "Newline-delimited JSON Delivery ledger records." },
+              },
+            },
+          },
+          "503": { description: "Delivery ledger is temporarily unavailable." },
+        },
+      },
     },
     "/v1/diagnostics/requests/{request_id}": {
       get: { summary: "Return request-id scoped diagnostics across usage, events, deliveries, streams, and artifacts" },
@@ -1776,17 +2361,67 @@ export const openApiDocument = {
       get: { summary: "Return aggregated webhook and stream delivery summaries for support workflows" },
     },
     "/v1/observability": {
-      get: { summary: "Return operator-only observability configuration and provider seam status" },
+      get: { summary: "Return admin-only observability configuration and provider seam status" },
     },
     "/v1/observability/export": {
-      get: { summary: "Return an operator-only observability export with config, usage, and recent events" },
+      get: { summary: "Return an admin-only observability export with config, usage, and recent events" },
     },
     "/v1/webhook_endpoints": {
       get: { summary: "List webhook endpoints for the current organization" },
-      post: { summary: "Create a signed webhook endpoint for artifact and stream events" },
+      post: {
+        summary: "Create a signed webhook endpoint for Delivery events",
+        ...inlineJsonRequestBody(webhookEndpointRequestSchema, {
+          destinationUrl: "https://example.com/hooks/secapi",
+          description: "Production monitor matches",
+          subscribedEventTypes: ["monitor.match"],
+          livemode: false,
+        }),
+        ...inlineJsonResponse(webhookEndpointResponseSchema, webhookEndpointCreateExample, "Webhook endpoint created. The signing secret is revealed once on create/rotate.", "201"),
+      },
+    },
+    "/v1/webhook_endpoints/{webhook_id}": {
+      patch: {
+        summary: "Update a webhook endpoint URL, description, subscribed event types, or active status",
+        ...inlineJsonRequestBody(webhookEndpointUpdateRequestSchema, {
+          destinationUrl: "https://example.com/hooks/secapi",
+          description: "Production monitor matches",
+          subscribedEventTypes: ["monitor.match", "webhook.test"],
+          status: "active",
+        }),
+        ...inlineJsonResponse(webhookEndpointResponseSchema, webhookEndpointExample),
+      },
+      delete: {
+        summary: "Delete a webhook endpoint while preserving delivery audit history",
+        ...inlineJsonResponse(webhookEndpointDeleteResponseSchema, webhookEndpointDeleteResponseExample),
+      },
+    },
+    "/v1/webhook_endpoints/{webhook_id}/enable": {
+      post: {
+        summary: "Enable a webhook endpoint",
+        ...inlineJsonResponse(webhookEndpointResponseSchema, webhookEndpointExample),
+      },
+    },
+    "/v1/webhook_endpoints/{webhook_id}/disable": {
+      post: {
+        summary: "Disable a webhook endpoint without deleting delivery history",
+        ...inlineJsonResponse(webhookEndpointResponseSchema, { ...webhookEndpointExample, status: "disabled" }),
+      },
+    },
+    "/v1/webhook_endpoints/{webhook_id}/test": {
+      post: {
+        summary: "Send a signed webhook.test event to a webhook endpoint",
+        ...inlineJsonRequestBody(webhookEndpointTestRequestSchema, {
+          eventType: "webhook.test",
+          data: { source: "dashboard" },
+        }),
+        ...inlineJsonResponse(webhookTestResponseSchema, webhookTestResponseExample),
+      },
     },
     "/v1/webhook_endpoints/{webhook_id}/rotate_secret": {
-      post: { summary: "Rotate the signing secret for a webhook endpoint" },
+      post: {
+        summary: "Rotate the signing secret for a webhook endpoint",
+        ...inlineJsonResponse(webhookEndpointResponseSchema, webhookEndpointCreateExample, "Signing secret rotated. The new secret is revealed once."),
+      },
     },
     "/v1/webhook_endpoints/{webhook_id}/deliveries": {
       get: { summary: "List canonical delivery attempts for a webhook endpoint" },
@@ -1832,10 +2467,56 @@ export const openApiDocument = {
     },
     "/v1/stream_subscriptions": {
       get: { summary: "List stream subscriptions for the current organization" },
-      post: { summary: "Create a stream subscription for event polling and replay" },
+      post: {
+        summary: "Create a stream subscription for event polling and replay",
+        ...inlineJsonRequestBody(streamSubscriptionRequestSchema, {
+          description: "Monitor matches polling stream",
+          eventTypes: ["monitor.match"],
+          transport: "poll",
+          livemode: false,
+        }),
+        ...inlineJsonResponse(streamSubscriptionResponseSchema, streamSubscriptionExample, "Stream subscription created.", "201"),
+      },
+    },
+    "/v1/stream_subscriptions/{stream_id}": {
+      patch: {
+        summary: "Update a stream subscription description, event types, transport, or status",
+        ...inlineJsonRequestBody(streamSubscriptionUpdateRequestSchema, {
+          description: "Monitor matches polling stream",
+          eventTypes: ["monitor.match", "webhook.test"],
+          transport: "poll",
+          status: "active",
+        }),
+        ...inlineJsonResponse(streamSubscriptionResponseSchema, streamSubscriptionExample),
+      },
+      delete: {
+        summary: "Delete a stream subscription while preserving delivery records",
+        ...inlineJsonResponse(streamSubscriptionDeleteResponseSchema, streamSubscriptionDeleteResponseExample),
+      },
+    },
+    "/v1/stream_subscriptions/{stream_id}/enable": {
+      post: {
+        summary: "Enable a stream subscription",
+        ...inlineJsonResponse(streamSubscriptionResponseSchema, streamSubscriptionExample),
+      },
+    },
+    "/v1/stream_subscriptions/{stream_id}/disable": {
+      post: {
+        summary: "Disable a stream subscription without deleting its delivery records",
+        ...inlineJsonResponse(streamSubscriptionResponseSchema, { ...streamSubscriptionExample, status: "paused" }),
+      },
     },
     "/v1/stream_subscriptions/{stream_id}/events": {
-      get: { summary: "Poll canonical stream events for a subscription with cursor semantics" },
+      get: {
+        summary: "Poll canonical stream events for a subscription with cursor semantics",
+        parameters: [
+          { name: "stream_id", in: "path", required: true, schema: { type: "string" }, description: "Stream subscription id." },
+          { name: "cursor", in: "query", required: false, schema: { type: "string" }, description: "Last seen stream cursor. The response returns records after this cursor." },
+          { name: "type", in: "query", required: false, schema: { type: "string" }, description: "Filter by canonical event type." },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 1000, default: 20 }, description: "Maximum stream events to return." },
+        ],
+        ...streamEventPageResponse,
+      },
     },
     "/v1/stream/tickets": {
       post: {
@@ -1845,8 +2526,8 @@ export const openApiDocument = {
     },
     "/v1/stream/ws": {
       get: {
-        summary: "Upgrade to a WebSocket connection for real-time filing event streaming",
-        description: "Upgrades the HTTP connection to a WebSocket. Clients must supply a short-lived signed `ticket` query parameter minted from `POST /v1/stream/tickets`. Streams `filing.published` events in real time with optional form/ticker filtering and cursor-based replay. Metered as `stream_connection` on upgrade and `stream_event` per delivery (1000/min default).",
+        summary: "Upgrade to a WebSocket connection for delivery event streaming",
+        description: "Upgrades the HTTP connection to a WebSocket. Clients must supply a short-lived signed `ticket` query parameter minted from `POST /v1/stream/tickets`. Connections are capped by plan but are not separately billable in v1. Delivered events use the same delivery-event billing family as stream polling and are idempotent per subscription and event. The current filing producer emits `filing.published` frames with optional form/ticker filtering and cursor-based replay.",
         parameters: [
           { name: "ticket", in: "query", schema: { type: "string" }, description: "Short-lived signed stream ticket minted from `POST /v1/stream/tickets`." },
           { name: "forms", in: "query", schema: { type: "string" }, description: "Comma-separated form types to filter (e.g. '10-K,8-K'). Case-insensitive." },
@@ -1854,7 +2535,7 @@ export const openApiDocument = {
           { name: "cursor", in: "query", schema: { type: "string" }, description: "Resume from a previous event cursor (e.g. 'sevt_...'). Events after this cursor are replayed on connect." },
         ],
         responses: {
-          "101": { description: "WebSocket upgrade successful. Server sends JSON frames: connected, filing.published, pong, filters_updated, rate_limited." },
+          "101": { description: "WebSocket upgrade successful. Server sends JSON frames such as connected, filing.published, pong, filters_updated, and rate_limited." },
           "401": { description: "Missing or invalid stream ticket" },
           "429": { description: "Per-organization connection limit exceeded" },
           "503": { description: "Global connection capacity exceeded" },
@@ -2530,49 +3211,53 @@ export const openApiDocument = {
     "/v1/macro/indicators": {
       get: {
         summary: "Return official-source macro indicator observations with revision-aware provenance and country-quality metadata",
-        parameters: [
+        parameters: macroResponseParams([
           { name: "indicator", in: "query", required: true, schema: { type: "string" }, description: "Indicator key (alias: indicator_key)" },
           { name: "country", in: "query", schema: { type: "string", default: "US" }, description: "ISO country code (e.g. US, JP, CN)" },
           { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 240, default: 24 }, description: "Maximum observations to return (default 24, max 240)" },
-        ],
+        ]),
       },
     },
     "/v1/macro/releases": {
       get: {
         summary: "Return macro release observations with actual, prior, consensus, and surprise metadata",
-        parameters: [
+        parameters: macroResponseParams([
           { name: "country", in: "query", schema: { type: "string", default: "US" }, description: "ISO country code (e.g. US, JP, CN)" },
           { name: "indicator", in: "query", schema: { type: "string" }, description: "Optional indicator key filter (alias: indicator_key)" },
+          { name: "status", in: "query", schema: { type: "string", enum: ["released", "scheduled"], default: "released" }, description: "Released history by default. Use scheduled to return upcoming calendar events." },
+          { name: "days", in: "query", schema: { type: "integer", minimum: 1, maximum: 180, default: 45 }, description: "Look-ahead window when status=scheduled." },
           { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 120, default: 12 }, description: "Maximum releases to return (default 12, max 120)" },
-        ],
+        ]),
       },
     },
     "/v1/macro/calendar": {
       get: {
         summary: "Return the macro event calendar for supported official-source releases and central-bank events",
-        parameters: [
+        parameters: macroResponseParams([
           { name: "country", in: "query", schema: { type: "string", default: "US" }, description: "ISO country code (e.g. US, JP, CN)" },
+          { name: "indicator", in: "query", schema: { type: "string" }, description: "Optional indicator key filter (alias: indicator_key)" },
           { name: "days", in: "query", schema: { type: "integer", minimum: 1, maximum: 180, default: 45 }, description: "Look-ahead window in days (default 45, max 180)" },
-        ],
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 120, default: 120 }, description: "Maximum scheduled events to return (default/max 120)" },
+        ]),
       },
     },
     "/v1/macro/forecasts": {
       get: {
         summary: "Return SEC API forecast baselines and scenario-aware macro projections with methodology metadata",
-        parameters: [
+        parameters: macroResponseParams([
           { name: "country", in: "query", schema: { type: "string", default: "US" }, description: "ISO country code (e.g. US, JP, CN)" },
           { name: "indicator", in: "query", schema: { type: "string" }, description: "Optional indicator key filter (alias: indicator_key)" },
           { name: "horizons", in: "query", schema: { type: "integer", minimum: 1, maximum: 6, default: 3 }, description: "Number of forecast horizons to return (default 3, max 6)" },
-        ],
+        ], { responseModeDefault: "compact" }),
       },
     },
     "/v1/macro/high-signal-pack": {
       get: {
         summary: "Return the launch-ring Tier-1 high-signal macro pack with explicit source, fallback, and release-calendar posture for supported countries",
         parameters: [
-          { name: "country", in: "query", schema: { type: "string", default: "JP" }, description: "ISO country code (e.g. US, JP, CN). Defaults to JP for backward compatibility." },
-          { name: "response_mode", in: "query", schema: { type: "string", enum: ["compact", "standard"], default: "compact" }, description: "Response projection. compact returns bounded per-series summaries; standard returns the full nested pack shape." },
-          { name: "include", in: "query", schema: { type: "string", enum: ["series"] }, description: "Use include=series to expand the full nested observations, releases, forecasts, source plans, and trust metadata." },
+          ...macroResponseParams([
+            { name: "country", in: "query", schema: { type: "string", default: "US" }, description: "ISO country code (e.g. US, JP, CN). Defaults to US." },
+          ], { responseModeDefault: "compact" }),
         ],
         responses: {
           "200": {
@@ -2585,7 +3270,30 @@ export const openApiDocument = {
     "/v1/macro/regimes": {
       get: {
         summary: "Return the current macro regime classification for a country using the canonical SEC API macro overlay",
-        ...jsonResponse("MacroRegime"),
+        parameters: macroResponseParams([
+          { name: "country", in: "query", schema: { type: "string", default: "US" }, description: "ISO country code (e.g. US, JP, CN)" },
+          { name: "lookback", in: "query", schema: { type: "string", default: "18m" }, description: "Lookback window for regime inference." },
+        ]),
+        responses: {
+          "200": {
+            description: "Successful response.",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    object: { type: "string", enum: ["list"] },
+                    data: { type: "array", items: schemaRef("MacroRegime") },
+                    hasMore: { type: "boolean" },
+                    nextCursor: { type: ["string", "null"] },
+                    requestId: { type: "string" },
+                  },
+                  required: ["object", "data"],
+                },
+              },
+            },
+          },
+        },
       },
     },
     "/v1/macro/credit-ratings": {
@@ -2962,7 +3670,7 @@ export const openApiDocument = {
     },
     "/v1/portfolio/attribution": {
       post: {
-        summary: "Return factor return attribution for a portfolio with explained return, alpha, and compact contribution rows",
+        summary: "Return factor return attribution for a portfolio with explained return, residual/unexplained return, and compact contribution rows",
         parameters: factorResponseParams(),
         ...jsonRequestBody("PortfolioAttributionRequest"),
         ...jsonFactorResponse("PortfolioAttribution"),
@@ -3011,7 +3719,7 @@ export const openApiDocument = {
     },
     "/v1/strategies/factor-rotation": {
       post: {
-        summary: "Return factor-rotation recommendations informed by macro regime context and factor state",
+        summary: "Return factor-rotation research scenarios informed by macro regime context and factor state",
         parameters: factorResponseParams(),
         ...jsonRequestBody("FactorStrategyRequest"),
         ...jsonFactorResponse("FactorRotationStrategy"),
@@ -3091,6 +3799,7 @@ export const openApiDocument = {
     "/v1/intelligence/country-report": {
       post: {
         summary: "Return a country intelligence bundle covering the prior period's macro path, likely drivers, and forward view",
+        parameters: macroResponseParams([], { responseModeDefault: "standard" }),
         ...jsonRequestBody("CountryReportRequest"),
         ...jsonResponse("CountryReport"),
       },
@@ -3498,7 +4207,7 @@ export const openApiDocument = {
     },
     "/v1/search/fulltext": {
       get: {
-        summary: "Full-text search across filing content and section text via Typesense",
+        summary: "Full-text search across filing content and section text",
         parameters: [
           { name: "q", in: "query", required: true, schema: { type: "string" }, description: "Search query" },
           { name: "ticker", in: "query", schema: { type: "string" }, description: "Optional issuer ticker filter. `symbol` is accepted as an alias." },
@@ -3517,7 +4226,7 @@ export const openApiDocument = {
     },
     "/v1/search/semantic": {
       get: {
-        summary: "Semantic vector search across SEC filing section content via Voyage AI + Pinecone, with hybrid keyword + vector RRF and citation fields on every result row",
+        summary: "Semantic vector search across SEC filing section content with finance-tuned embeddings, hybrid keyword + vector RRF, and citation fields on every result row",
         parameters: [
           { name: "q", in: "query", required: true, schema: { type: "string" }, description: "Search query" },
           { name: "mode", in: "query", schema: { type: "string", enum: ["keyword", "semantic", "hybrid"] }, description: "Retrieval mode (default hybrid). Invalid values return invalid_query_parameter with acceptedValues." },
@@ -3544,7 +4253,7 @@ export const openApiDocument = {
     },
     "/v1/market/financials": {
       get: {
-        summary: "Financial statements (income, balance sheet, cash flow) for a ticker via MASSIVE/Polygon",
+        summary: "Financial statements (income, balance sheet, cash flow) for a ticker via SEC API market data",
         parameters: [
           { name: "ticker", in: "query", required: true, schema: { type: "string" } },
           { name: "timeframe", in: "query", schema: { type: "string", enum: ["annual", "quarterly"] } },
@@ -3563,7 +4272,7 @@ export const openApiDocument = {
     },
     "/v1/market/estimates": {
       get: {
-        summary: "Return analyst consensus ratings and price-target estimates for a ticker via Massive/Benzinga",
+        summary: "Return analyst consensus ratings and price-target estimates for a ticker via SEC API market data",
         parameters: [
           { name: "ticker", in: "query", required: true, schema: { type: "string" } },
           { name: "date_from", in: "query", schema: { type: "string", format: "date" } },

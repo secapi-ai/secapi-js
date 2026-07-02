@@ -286,6 +286,8 @@ describe("SecApiClient retry behavior", () => {
             message: "hosted tool failed",
             hint: "Retry with a smaller limit.",
             docsUrl: "https://docs.secapi.ai/mcp-workflows",
+            action: "retry_with_narrower_arguments",
+            retryable: true,
             requestId: "req_mcp_data",
           },
         },
@@ -300,6 +302,8 @@ describe("SecApiClient retry behavior", () => {
       message: "hosted tool failed (request_id: req_mcp_data)",
       hint: "Retry with a smaller limit.",
       docsUrl: "https://docs.secapi.ai/mcp-workflows",
+      action: "retry_with_narrower_arguments",
+      retryable: true,
     })
   })
 
@@ -326,6 +330,332 @@ describe("SecApiClient retry behavior", () => {
       hint: "Pass your key in the x-api-key header.",
       docsUrl: "https://docs.secapi.ai/auth-and-pricing",
     })
+  })
+
+  test("billing and quota denial matrix preserves diagnostics and retry posture", async () => {
+    const cases = [
+      {
+        name: "missing key",
+        call: (client: SecApiClient) => client.me(),
+        responses: [jsonResponse(401, {
+          object: "error",
+          code: "missing_api_key",
+          type: "authentication_error",
+          message: "Authentication required. Pass your API key in the x-api-key header.",
+          requestId: "req_missing_key",
+          hint: "Create an API key, then send it as x-api-key.",
+          docsUrl: "https://docs.secapi.ai/auth-and-pricing",
+        })],
+        expected: {
+          status: 401,
+          code: "missing_api_key",
+          requestId: "req_missing_key",
+          hint: "Create an API key, then send it as x-api-key.",
+          docsUrl: "https://docs.secapi.ai/auth-and-pricing",
+          attempts: 1,
+        },
+      },
+      {
+        name: "invalid key",
+        call: (client: SecApiClient) => client.me(),
+        responses: [jsonResponse(401, {
+          object: "error",
+          code: "authentication_failed",
+          type: "authentication_error",
+          message: "The API key was rejected. Rotate the key in the dashboard.",
+          requestId: "req_invalid_key",
+          details: {
+            docsUrl: "https://docs.secapi.ai/auth-and-pricing",
+          },
+        })],
+        expected: {
+          status: 401,
+          code: "authentication_failed",
+          requestId: "req_invalid_key",
+          docsUrl: "https://docs.secapi.ai/auth-and-pricing",
+          attempts: 1,
+        },
+      },
+      {
+        name: "exhausted prepaid credits",
+        call: (client: SecApiClient) => client.billing(),
+        responses: [jsonResponse(402, {
+          object: "error",
+          code: "insufficient_credits",
+          type: "invalid_request_error",
+          message: "Insufficient prepaid credits to serve this request.",
+          requestId: "req_credits_empty",
+          details: {
+            meterClass: "filing_retrieval",
+            planKey: "payg",
+            creditBalanceCents: 0,
+            requestCostCents: 2,
+            topUpUrl: "https://secapi.ai/app/billing",
+            docsUrl: "https://docs.secapi.ai/pay-as-you-go",
+            action: "add_credits_or_enable_auto_top_up",
+            retryable: false,
+          },
+        })],
+        expected: {
+          status: 402,
+          code: "insufficient_credits",
+          requestId: "req_credits_empty",
+          details: { planKey: "payg", creditBalanceCents: 0, requestCostCents: 2 },
+          action: "add_credits_or_enable_auto_top_up",
+          retryable: false,
+          attempts: 1,
+        },
+      },
+      {
+        name: "PAYG inactive after starter grant",
+        call: (client: SecApiClient) => client.billing(),
+        responses: [jsonResponse(402, {
+          object: "error",
+          code: "billing_required",
+          type: "invalid_request_error",
+          message: "Attach a card to continue after the starter grant is exhausted.",
+          requestId: "req_payg_pending_card",
+          details: {
+            meterClass: "section_extract",
+            planKey: "payg",
+            billingState: "payg_pending_card",
+            freeGrantRemaining: 0,
+            action: "resolve_billing_status",
+            retryable: false,
+          },
+        })],
+        expected: {
+          status: 402,
+          code: "billing_required",
+          requestId: "req_payg_pending_card",
+          details: { billingState: "payg_pending_card", freeGrantRemaining: 0 },
+          action: "resolve_billing_status",
+          retryable: false,
+          attempts: 1,
+        },
+      },
+      {
+        name: "free grant feature denial",
+        call: (client: SecApiClient) => client.billing(),
+        responses: [jsonResponse(402, {
+          object: "error",
+          code: "billing_required",
+          type: "invalid_request_error",
+          message: "intelligence_query is not available on the sandbox_grant plan",
+          requestId: "req_free_grant_denied",
+          details: {
+            meterClass: "intelligence_query",
+            planKey: "sandbox_grant",
+            publicPlanKey: "sandbox_grant",
+            freeGrantRemaining: 17,
+            action: "upgrade_plan",
+            retryable: false,
+          },
+        })],
+        expected: {
+          status: 402,
+          code: "billing_required",
+          requestId: "req_free_grant_denied",
+          details: { planKey: "sandbox_grant", freeGrantRemaining: 17 },
+          action: "upgrade_plan",
+          retryable: false,
+          attempts: 1,
+        },
+      },
+      {
+        name: "short rate limit retries once with Retry-After",
+        call: (client: SecApiClient) => client.me(),
+        responses: [
+          jsonResponse(429, {
+            object: "error",
+            code: "rate_limit_exceeded",
+            type: "invalid_request_error",
+            message: "Rate limit exceeded on the sandbox_grant plan for filing_search requests.",
+            requestId: "req_rate_limited",
+            details: {
+              meterClass: "filing_search",
+              limit: 1,
+              period: "minute",
+              planKey: "sandbox_grant",
+              upgradeUrl: "https://secapi.ai/pricing",
+              action: "retry_after",
+              retryable: true,
+            },
+          }, { "retry-after": "2" }),
+          jsonResponse(200, { object: "me", requestId: "req_after_retry" }),
+        ],
+        expected: { attempts: 2, delays: [2000], resolves: { requestId: "req_after_retry" } },
+      },
+      {
+        name: "REST monthly quota exhausted does not retry",
+        call: (client: SecApiClient) => client.intelligenceSecurity({ ticker: "AAPL" }),
+        responses: [jsonResponse(429, {
+          object: "error",
+          code: "ai_query_quota_exceeded",
+          type: "invalid_request_error",
+          message: "Monthly AI query quota exhausted (10/10). Upgrade your plan at https://secapi.ai/pricing for a higher allowance.",
+          requestId: "req_rest_quota",
+          details: {
+            quotaFamily: "ai_queries",
+            aiQueryQuotaLimit: 10,
+            aiQueryQuotaUsed: 10,
+            aiQueryQuotaRemaining: 0,
+            planKey: "sandbox_grant",
+            upgradeUrl: "https://secapi.ai/pricing",
+            docsUrl: "https://docs.secapi.ai/api-conventions",
+            action: "wait_for_quota_reset_or_upgrade",
+            retryable: false,
+          },
+        }, { "retry-after": "86400" })],
+        expected: {
+          status: 429,
+          code: "ai_query_quota_exceeded",
+          requestId: "req_rest_quota",
+          details: { quotaFamily: "ai_queries", aiQueryQuotaRemaining: 0, upgradeUrl: "https://secapi.ai/pricing" },
+          action: "wait_for_quota_reset_or_upgrade",
+          retryable: false,
+          attempts: 1,
+        },
+      },
+      {
+        name: "MCP monthly quota exhausted does not retry",
+        call: (client: SecApiClient) => client.callMcpTool("intelligence.query", { query: "AAPL risk", entities: ["AAPL"] }),
+        responses: [jsonResponse(429, {
+          error: {
+            code: -32005,
+            message: "ai_query_quota_exceeded",
+            data: {
+              code: "ai_query_quota_exceeded",
+              message: "Monthly AI query quota exhausted (10/10). Upgrade your plan at https://secapi.ai/pricing for a higher allowance.",
+              requestId: "req_mcp_quota",
+              mcpToolName: "intelligence.query",
+              quota: { family: "ai_queries", used: 10, limit: 10, remaining: 0 },
+              upgradeUrl: "https://secapi.ai/pricing",
+              docsUrl: "https://docs.secapi.ai/mcp-workflows#ai-query-quota",
+              action: "wait_for_quota_reset_or_upgrade",
+              retryable: false,
+            },
+          },
+        }, { "retry-after": "86400" })],
+        expected: {
+          status: 429,
+          code: "ai_query_quota_exceeded",
+          requestId: "req_mcp_quota",
+          docsUrl: "https://docs.secapi.ai/mcp-workflows#ai-query-quota",
+          details: { mcpToolName: "intelligence.query", upgradeUrl: "https://secapi.ai/pricing" },
+          action: "wait_for_quota_reset_or_upgrade",
+          retryable: false,
+          attempts: 1,
+        },
+      },
+      {
+        name: "MCP billing required does not retry",
+        call: (client: SecApiClient) => client.callMcpTool("filings.latest", { ticker: "AAPL", form: "10-K" }),
+        responses: [jsonResponse(402, {
+          error: {
+            code: -32007,
+            message: "billing_required",
+            data: {
+              code: "billing_required",
+              message: "Attach a card to continue after the starter grant is exhausted.",
+              requestId: "req_mcp_billing_required",
+              meterClass: "mcp",
+              billingState: "payg_pending_card",
+              docsUrl: "https://docs.secapi.ai/auth-and-pricing",
+              action: "resolve_billing_status",
+              retryable: false,
+            },
+          },
+        })],
+        expected: {
+          status: 402,
+          code: "billing_required",
+          requestId: "req_mcp_billing_required",
+          docsUrl: "https://docs.secapi.ai/auth-and-pricing",
+          details: { meterClass: "mcp", billingState: "payg_pending_card" },
+          action: "resolve_billing_status",
+          retryable: false,
+          attempts: 1,
+        },
+      },
+      {
+        name: "unsafe POST 503 does not retry by default",
+        call: (client: SecApiClient) => client.quoteBilling({ meterClass: "section_extract", units: 1 }),
+        responses: [jsonResponse(503, {
+          object: "error",
+          code: "service_unavailable",
+          type: "api_error",
+          message: "Billing quote temporarily unavailable.",
+          requestId: "req_quote_503",
+        })],
+        expected: {
+          status: 503,
+          code: "service_unavailable",
+          requestId: "req_quote_503",
+          attempts: 1,
+        },
+      },
+    ]
+
+    for (const entry of cases) {
+      let attempts = 0
+      const { delays, retry } = retryHarness({ maxRetries: 1 })
+      const client = new SecApiClient({
+        retry,
+        telemetry: false,
+        fetch: async () => entry.responses[Math.min(attempts++, entry.responses.length - 1)]!,
+      })
+
+      if (entry.expected.resolves) {
+        await expect(entry.call(client)).resolves.toMatchObject(entry.expected.resolves)
+      } else {
+        await expect(entry.call(client)).rejects.toMatchObject({
+          name: "SecApiError",
+          status: entry.expected.status,
+          code: entry.expected.code,
+          requestId: entry.expected.requestId,
+          ...("hint" in entry.expected && entry.expected.hint ? { hint: entry.expected.hint } : {}),
+          ...("docsUrl" in entry.expected && entry.expected.docsUrl ? { docsUrl: entry.expected.docsUrl } : {}),
+          ...("action" in entry.expected && entry.expected.action ? { action: entry.expected.action } : {}),
+          ...("retryable" in entry.expected && typeof entry.expected.retryable === "boolean" ? { retryable: entry.expected.retryable } : {}),
+          ...("details" in entry.expected && entry.expected.details ? { details: expect.objectContaining(entry.expected.details) } : {}),
+        })
+      }
+
+      expect(attempts, entry.name).toBe(entry.expected.attempts)
+      expect(delays, entry.name).toEqual(entry.expected.delays ?? [])
+    }
+  })
+
+  test("does not retry 429 responses when the API marks them non-retryable", async () => {
+    let attempts = 0
+    const { delays, retry } = retryHarness({ maxRetries: 2 })
+    const client = new SecApiClient({
+      retry,
+      telemetry: false,
+      fetch: async () => {
+        attempts += 1
+        return jsonResponse(429, {
+          object: "error",
+          code: "quota_not_ready",
+          message: "This quota can only be retried after an account action.",
+          requestId: "req_non_retryable_429",
+          details: {
+            action: "resolve_account_state",
+            retryable: false,
+          },
+        }, { "retry-after": "1" })
+      },
+    })
+
+    await expect(client.me()).rejects.toMatchObject({
+      status: 429,
+      code: "quota_not_ready",
+      action: "resolve_account_state",
+      retryable: false,
+    })
+    expect(attempts).toBe(1)
+    expect(delays).toEqual([])
   })
 
   test("uses x-request-id header when API error body omits request id", async () => {
@@ -960,6 +1290,87 @@ describe("SecApiClient retry behavior", () => {
     await expect(client.createArtifact({ kind: "audit" })).resolves.toEqual({ ok: true })
     expect(attempts).toBe(2)
     expect(delays).toEqual([2_000])
+  })
+
+  test("retries 429 responses using structured retry timing when Retry-After is unavailable", async () => {
+    let attempts = 0
+    const { delays, retry } = retryHarness()
+    const client = new SecApiClient({
+      retry,
+      telemetry: false,
+      fetch: async () => {
+        attempts += 1
+        return attempts === 1
+          ? jsonResponse(429, {
+              object: "error",
+              code: "rate_limit_exceeded",
+              message: "Rate limit exceeded.",
+              details: {
+                retryAfterSeconds: 3,
+                retryable: true,
+              },
+            })
+          : jsonResponse(200, { ok: true })
+      },
+    })
+
+    await expect(client.createArtifact({ kind: "audit" })).resolves.toEqual({ ok: true })
+    expect(attempts).toBe(2)
+    expect(delays).toEqual([3_000])
+  })
+
+  test("retries retryable service errors using structured retry timing when Retry-After is unavailable", async () => {
+    let attempts = 0
+    const { delays, retry } = retryHarness()
+    const client = new SecApiClient({
+      retry,
+      telemetry: false,
+      fetch: async () => {
+        attempts += 1
+        return attempts === 1
+          ? jsonResponse(503, {
+              object: "error",
+              code: "auth_verification_unavailable",
+              message: "Auth verification temporarily unavailable.",
+              retryAfterMs: 750,
+            })
+          : jsonResponse(200, { ok: true })
+      },
+    })
+
+    await expect(client.health()).resolves.toEqual({ ok: true })
+    expect(attempts).toBe(2)
+    expect(delays).toEqual([750])
+  })
+
+  test("exposes structured MCP retry timing on terminal quota errors without Retry-After", async () => {
+    const client = new SecApiClient({
+      retry: false,
+      telemetry: false,
+      fetch: async () => jsonResponse(429, {
+        error: {
+          code: -32005,
+          message: "ai_query_quota_exceeded",
+          data: {
+            code: "ai_query_quota_exceeded",
+            message: "Monthly AI query quota exhausted.",
+            requestId: "req_mcp_quota_body_retry",
+            retryAfterSeconds: 86_400,
+            action: "wait_for_quota_reset_or_upgrade",
+            retryable: false,
+          },
+        },
+      }),
+    })
+
+    await expect(client.callMcpTool("intelligence.query", { query: "AAPL risk" })).rejects.toMatchObject({
+      status: 429,
+      code: "ai_query_quota_exceeded",
+      requestId: "req_mcp_quota_body_retry",
+      retryAfterMs: 86_400_000,
+      action: "wait_for_quota_reset_or_upgrade",
+      retryable: false,
+    })
   })
 
   test("retries MCP tools/call only when explicitly opted in", async () => {

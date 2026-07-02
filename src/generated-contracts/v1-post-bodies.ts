@@ -140,12 +140,37 @@ export const v1CreateWebhookEndpointBodySchema = z
   })
   .passthrough()
 
+export const v1UpdateWebhookEndpointBodySchema = z
+  .object({
+    destinationUrl: z.string().nullish(),
+    description: z.string().nullish(),
+    subscribedEventTypes: z.array(z.string()).nullish(),
+    status: z.enum(["active", "disabled"]).nullish(),
+  })
+  .passthrough()
+
+export const v1TestWebhookEndpointBodySchema = z
+  .object({
+    eventType: z.string().nullish(),
+    data: z.record(z.string(), z.unknown()).nullish(),
+  })
+  .passthrough()
+
 export const v1CreateStreamSubscriptionBodySchema = z
   .object({
     description: z.string().nullish(),
     eventTypes: z.array(z.string()).nullish(),
     transport: z.enum(["poll", "webhook_mirror", "websocket"]).nullish(),
     livemode: z.boolean().nullish(),
+  })
+  .passthrough()
+
+export const v1UpdateStreamSubscriptionBodySchema = z
+  .object({
+    description: z.string().nullish(),
+    eventTypes: z.array(z.string()).nullish(),
+    transport: z.enum(["poll", "webhook_mirror", "websocket"]).nullish(),
+    status: z.enum(["active", "paused"]).nullish(),
   })
   .passthrough()
 
@@ -207,7 +232,6 @@ export const v1MonitorDestinationSchema = z.discriminatedUnion("type", [
     type: z.literal("email"),
     config: z.object({
       to: z.string().email(),
-      from: z.string().email().nullish(),
     }),
   }),
 ])
