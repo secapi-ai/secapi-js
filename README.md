@@ -1,391 +1,120 @@
-# @secapi/sdk-js
+# SEC API JavaScript SDK
 
-TypeScript and JavaScript SDK for [SEC API](https://secapi.ai/developers) -- factor data, SEC filings, financial statements, ownership data, and more. Legacy client names remain available for compatibility.
+Query SEC filings, financial statements, ownership data, and filing sections from TypeScript or JavaScript.
 
-## Installation
+[Documentation](https://docs.secapi.ai) · [Get an API key](https://secapi.ai/signup) · [API status](https://status.secapi.ai)
+
+## Install
 
 ```bash
 npm install @secapi/sdk-js
-# or
-pnpm add @secapi/sdk-js
-# or
-yarn add @secapi/sdk-js
 ```
 
-## Configuration
+The package is ESM-only and includes TypeScript declarations.
 
-Create a client instance with your API key:
+## Retrieve a filing
 
-```ts
-import { SecApiClient } from "@secapi/sdk-js"
-
-// Reads SECAPI_API_KEY and SECAPI_BASE_URL from the environment by default.
-const client = new SecApiClient()
-```
-
-You can also pass credentials explicitly:
-
-```ts
-const client = new SecApiClient({
-  apiKey: process.env.SECAPI_API_KEY,
-  // Optional: override the base URL (defaults to https://api.secapi.ai)
-  // baseUrl: process.env.SECAPI_BASE_URL ?? process.env.SECAPI_API_BASE_URL,
-})
-```
-
-You can also authenticate with a Bearer token instead of an API key:
-
-```ts
-const client = new SecApiClient({
-  bearerToken: process.env.SECAPI_BEARER_TOKEN,
-})
-```
-
-### Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `SECAPI_API_KEY` | Preferred SEC API key env var |
-| `SECAPI_BEARER_TOKEN` | Preferred OAuth bearer token env var |
-| `SECAPI_BASE_URL` | Preferred base URL override |
-| `SECAPI_API_BASE_URL` | Preferred API base URL override alias |
-| `OMNI_DATASTREAM_API_KEY` | Compatibility API key env var |
-| `OMNI_DATASTREAM_BASE_URL` | Compatibility base URL override |
-| `OMNI_DATASTREAM_API_BASE_URL` | Compatibility base URL override alias |
-| `SECAPI_OPERATOR_API_KEY` | Preferred operator/admin API key env var |
-
-## Reliability
-
-The SDK retries transient failures with exponential backoff and jitter. Defaults:
-
-- Auto-retried by default: `GET`, `HEAD`, `OPTIONS`
-- Opt-in required: `POST`, `PUT`, `PATCH`, `DELETE`, MCP `tools/call`
-- Always retried regardless of method: `429` rate limits, with `Retry-After` or structured retry timing honored
-- Retryable failures: network errors, `408`, `429`, `502`, `503`, `504`
-- Never retried: `400`, `401`, `403`, `404`, `422`
-- Backoff: base `200ms`, max `5s`, max retries `3`, total budget `30s`
-- Circuit breaker: opens after 5 consecutive retryable failures, cools down for 60s
-
-Disable retries globally if you already wrap the SDK with your own retry layer:
-
-```ts
-const client = new SecApiClient({
-  apiKey: process.env.SECAPI_API_KEY,
-  retry: false,
-})
-```
-
-Per-call overrides are supported:
-
-```ts
-await client.latestFiling({ ticker: "AAPL", retry: false })
-
-await client.createArtifact(
-  { kind: "audit", payload: { ticker: "AAPL" } },
-  { retry: { enabled: true, idempotencyKey: "artifact-aapl-audit-2026-05-01" } },
-)
-```
-
-Only opt into retries for mutating requests when the operation is idempotent from your application's point of view. Provide an idempotency key so ambiguous network failures can be correlated safely.
-
-Retry telemetry emits anonymous `client_retry_attempt` events to SEC API's telemetry project. Set `telemetry: false` globally or per call to opt out.
-
-## Quickstart
-
-```ts
-import { SecApiClient } from "@secapi/sdk-js"
-
-const client = new SecApiClient({
-  // Uses SECAPI_API_KEY from the environment.
-})
-
-// Resolve a company entity
-const entity = await client.resolveEntity({ ticker: "AAPL" })
-console.log(entity)
-
-// Get the latest 10-K filing
-const filing = await client.latestFiling({ ticker: "AAPL", form: "10-K" })
-console.log(filing)
-
-// Same workflow in the compact agent response shape
-const agentFiling = await client.agentLatestFiling({ ticker: "AAPL", form: "10-K" })
-console.log(agentFiling)
-
-// Extract a specific section from the filing
-const section = await client.latestSection({
-  ticker: "AAPL",
-  form: "10-K",
-  sectionKey: "item_1a",
-  mode: "compact",
-})
-console.log(section)
-```
-
-### Grouped namespaces
-
-Flat methods remain the canonical API, and the client also exposes grouped
-aliases for editor discovery:
-
-```ts
-const filing = await client.filings.latest({ ticker: "AAPL", form: "10-K" })
-const section = await client.sections.latest({
-  ticker: "AAPL",
-  form: "10-K",
-  sectionKey: "item_1a",
-  mode: "compact",
-})
-const results = await client.search.semantic({
-  q: "revenue concentration risk",
-  ticker: "AAPL",
-  mode: "hybrid",
-  view: "agent",
-})
-const history = await client.factors.history("VALUE", {
-  range: "1y",
-  response_mode: "compact",
-})
-const macroStatus = await client.macro.status({
-  country: "US",
-  response_mode: "compact",
-})
-const briefing = await client.macro.briefing({
-  country: "US",
-  symbols: ["AAPL", "NVDA"],
-  briefingMode: "company",
-})
-const stressScenarios = await client.portfolio.stressScenarios({
-  country: "US",
-  response_mode: "compact",
-})
-const sensitivity = await client.factors.macroSensitivity({
-  country: "US",
-  scenario_key: "higher_for_longer",
-  factors: ["VALUE", "QUALITY"],
-  response_mode: "compact",
-})
-```
-
-Available namespaces include `entities`, `filings`, `sections`, `search`, and
-`factors`, plus macro and portfolio helpers for agent workflows. These namespaces
-are curated for common discovery workflows; the flat methods remain the
-exhaustive SDK surface.
-
-### Live agent workflow example
-
-For a production-backed copy/paste path, run the focused example that resolves
-an entity, fetches the latest 10-K, and extracts Item 1A in compact mode:
+Set your API key:
 
 ```bash
 export SECAPI_API_KEY="secapi_live_..."
-bun run packages/sdk-js/examples/agent_workflow.ts
 ```
 
-From the monorepo root, `bun run smoke:sdk-examples` runs the matching
-JavaScript, Python, Go, and Rust examples and asserts that each returns entity,
-filing, and compact-section metadata.
-
-### Auto-pagination
-
-Cursor endpoints can be consumed with async iterators instead of hand-rolling
-`nextCursor` loops:
+Then fetch Apple's latest 10-K:
 
 ```ts
-for await (const filing of client.paginateFilings({
+import { SecApiClient } from "@secapi/sdk-js"
+
+const sec = new SecApiClient()
+const filing = await sec.agentLatestFiling({
   ticker: "AAPL",
   form: "10-K",
+})
+
+console.log(filing)
+```
+
+Save the example as `first-request.mjs` and run it with `node first-request.mjs`.
+
+The compact response identifies the filing and links back to the SEC source:
+
+```json
+{
+  "object": "filing",
+  "ticker": "AAPL",
+  "form": "10-K",
+  "accessionNumber": "0000320193-25-000079",
+  "filingDate": "2025-10-31",
+  "title": "10-K - Apple Inc.",
+  "filingUrl": "https://www.sec.gov/Archives/edgar/data/320193/0000320193-25-000079.txt",
+  "requestId": "req_..."
+}
+```
+
+The accession number is the filing's stable SEC identifier. Keep it with any extracted text or analysis so you can trace the result to its source. Filing dates and accession numbers in this example will change when Apple files a newer 10-K.
+
+## Common requests
+
+Flat methods are the complete SDK interface. Grouped aliases such as `sec.filings.latest()` and `sec.sections.latest()` are available for editor discovery.
+
+```ts
+// Resolve a ticker, CIK, FIGI, ISIN, CUSIP, or company name.
+const company = await sec.resolveEntity({ ticker: "AAPL", view: "agent" })
+
+// Search filings and follow the returned SEC source metadata.
+const filings = await sec.searchFilings({
+  ticker: "AAPL",
+  forms: ["10-K", "10-Q"],
+  limit: 20,
+})
+
+// Retrieve Item 1A from the latest 10-K.
+const riskFactors = await sec.agentSection({
+  ticker: "AAPL",
+  form: "10-K",
+  sectionKey: "item_1a",
+})
+
+// Retrieve annual income-statement rows in the compact response shape.
+const income = await sec.agentStatement("income_statement", {
+  ticker: "AAPL",
+  period: "annual",
+  limit: 3,
+})
+
+// Inspect recent insider transactions.
+const insiders = await sec.insiders({ ticker: "AAPL", limit: 20 })
+```
+
+See the [API documentation](https://docs.secapi.ai) for endpoint coverage, parameters, response fields, and runnable tutorials.
+
+## Pagination
+
+Use the built-in async iterators for cursor-based endpoints:
+
+```ts
+for await (const filing of sec.paginateFilings({
+  ticker: "AAPL",
+  form: "8-K",
   limit: 100,
 })) {
   console.log(filing)
 }
 ```
 
-Built-in helpers cover common discovery flows: `paginateFilings`,
-`paginateSections`, and `paginateEntities`. For other cursor endpoints, use the
-generic helper and pass the page function:
+The SDK also provides `paginateEntities()`, `paginateSections()`, and a generic `paginate()` helper.
 
-```ts
-for await (const event of client.paginate(
-  (params) => client.streamEvents("stream_123", params),
-  { limit: 100 },
-  { maxItems: 500 },
-)) {
-  console.log(event)
-}
-```
+## Errors
 
-If an endpoint returns a non-standard list key, provide `getItems` or
-`getNextCursor` in the options.
-
-## Common Use Cases
-
-### Factor Data and Portfolio Workflows
-
-Use `response_mode: "compact"` when you are feeding an agent, LLM, notebook, or UI card and want the smallest useful payload. Compact catalog responses still include readiness/proof summaries. Add `include: "trust"` only when you need the full trust/provenance envelope plus full methodology/materialization/revision/source-rights objects for citations or checks. For catalog/tool-discovery calls, start narrow with `category` plus `limit` before requesting trust metadata; the full trust envelope can be larger than a simple picker payload.
-
-```ts
-// Factor catalog for picker UIs and agent tool discovery
-const catalog = await client.factorCatalog({
-  category: "style",
-  limit: 25,
-  response_mode: "compact",
-  include: "trust",
-})
-
-// 1D through MAX style return history for charts and tables
-const valueHistory = await client.factorHistory("VALUE", {
-  range: "1y",
-  response_mode: "compact",
-  include: "trust,series",
-})
-
-// Factor opportunity screen for valuation-led workflows
-const valuations = await client.factorValuations({
-  keys: ["VALUE", "QUALITY", "MOMENTUM"],
-  side: "all",
-  sort: "opportunity_score",
-  response_mode: "compact",
-  include: "trust",
-  limit: 25,
-})
-
-// Extreme moves and pairs for dashboard surfaces
-const dashboard = await client.factorDashboard({
-  country: "US",
-  category: "style",
-  ticker: "AAPL",
-  response_mode: "compact",
-})
-const extremeMoves = await client.factorExtremeMoves({
-  category: "style",
-  window: "1d",
-  min_z_score: 2,
-  response_mode: "compact",
-})
-const extremePairs = await client.factorExtremePairs({
-  category: "style",
-  window: "1m",
-  min_z_score: 1,
-  response_mode: "compact",
-})
-```
-
-Portfolio and model workflows use `POST` because they carry holdings or model payloads. Keep retries off by default unless your request is idempotent and you provide an idempotency key.
-
-```ts
-const holdings = [
-  { symbol: "AAPL", weight: 0.4 },
-  { symbol: "MSFT", weight: 0.35 },
-  { symbol: "NVDA", weight: 0.25 },
-]
-
-const attribution = await client.portfolioAttribution(
-  { holdings, window: "1y", frequency: "monthly" },
-  { response_mode: "compact", include: "trust" },
-)
-
-const hedge = await client.portfolioHedge(
-  { holdings, objective: "factor_neutral", constraints: { maxHedges: 5 } },
-  { response_mode: "compact", include: "trust" },
-)
-
-const optimized = await client.portfolioOptimize(
-  { holdings, objective: "regime_aware", constraints: { longOnly: true, maxPositionWeight: 0.35 } },
-  { response_mode: "compact", include: "trust" },
-)
-
-const modelFactorAnalysis = await client.modelFactorAnalysis(
-  {
-    model: { id: "growth-core", label: "Growth Core" },
-    holdings,
-    include: { attribution: true, hedge: true, optimizer: true },
-  },
-  { response_mode: "compact", include: "trust" },
-)
-```
-
-### Financial Statements
-
-```ts
-// Get XBRL facts
-const facts = await client.facts({ ticker: "AAPL", tag: "Assets", taxonomy: "us-gaap", limit: 5 })
-
-// Full financial statements
-const statements = await client.allStatements({ ticker: "AAPL", period: "annual", limit: 3 })
-
-// Agent-mode statement rows keep compact source metadata for citations
-const agentIncome = await client.agentStatement("income_statement", {
-  ticker: "AAPL",
-  period: "annual",
-  limit: 3,
-})
-```
-
-### Ownership and Institutional Holdings
-
-```ts
-// Latest 13F filing (institutional holdings)
-const holdings = await client.latest13F({ cik: "0001067983", limit: 10 })
-
-// Insider trades
-const insiders = await client.insiders({ ticker: "AAPL", limit: 10 })
-
-// Issuer-level institutional holders, agent-mode by default
-const holders = await client.agentInstitutionalHolders({ ticker: "NVDA", limit: 10 })
-
-// Form 144 proposed sale filings, agent-mode by default
-const form144 = await client.agentForm144({ ticker: "NVDA", limit: 10 })
-```
-
-### Market Data
-
-```ts
-// Market calendar
-const calendar = await client.marketCalendar({ market: "XNYS", duration: 3 })
-
-// Volatility signal
-const vol = await client.volatilitySignal({ ticker: "AAPL" })
-```
-
-### Dashboard and Account Management
-
-Dashboard endpoints require a WorkOS bearer token with account-management permissions.
-
-```ts
-const dashboardClient = new SecApiClient({
-  bearerToken: process.env.SECAPI_BEARER_TOKEN,
-})
-
-const dashboard = await dashboardClient.dashboardOverview()
-const settings = await dashboardClient.dashboardSettings()
-
-await dashboardClient.updateDashboardAppearance({
-  theme: "dark",
-  density: "compact",
-})
-
-const usage = await dashboardClient.dashboardUsageSeries({
-  bucket: "day",
-  since: "2026-06-01T00:00:00.000Z",
-  until: "2026-06-07T00:00:00.000Z",
-})
-
-const requests = await dashboardClient.dashboardUsageRequests({ status: "error", limit: 25 })
-console.log(dashboard, settings, usage, requests)
-```
-
-## Error Handling
-
-All API errors throw `SecApiError` with structured details:
+API failures throw `SecApiError` with a status, stable error code, request ID, and recovery guidance when available:
 
 ```ts
 import { SecApiClient, SecApiError } from "@secapi/sdk-js"
 
-const client = new SecApiClient({
-  apiKey: process.env.SECAPI_API_KEY,
-})
+const sec = new SecApiClient()
 
 try {
-  await client.requestDiagnostics("missing-request-id")
+  await sec.latestFiling({ ticker: "NOT-A-TICKER", form: "10-K" })
 } catch (error) {
   if (error instanceof SecApiError) {
     console.error({
@@ -394,52 +123,107 @@ try {
       requestId: error.requestId,
       message: error.message,
       hint: error.hint,
-      docsUrl: error.docsUrl,
-      details: error.details,
     })
   }
 }
 ```
 
-## MCP (Model Context Protocol) Usage
+Include `requestId` when reporting an API problem.
 
-The SDK supports MCP-compatible tool invocation for AI agent workflows:
+## Authentication and configuration
+
+`new SecApiClient()` reads `SECAPI_API_KEY` and sends it as the `x-api-key` header. You can pass configuration explicitly when needed:
 
 ```ts
-// Get available MCP tools
-const mcpInfo = await client.mcpInfo()
-console.log(mcpInfo)
+const sec = new SecApiClient({
+  apiKey: process.env.SECAPI_API_KEY,
+  apiVersion: "2026-03-19",
+  baseUrl: "https://api.secapi.ai",
+})
+```
 
-// Invoke an MCP tool without hand-writing JSON-RPC
-const toolResult = await client.callMcpTool(
-  "sections.get",
-  { ticker: "AAPL", form: "10-K", sectionKey: "item_1a", mode: "compact" },
-  { id: "aapl-risk-factors" },
+The SDK also recognizes these environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `SECAPI_API_KEY` | API key for server-side and local development |
+| `SECAPI_BASE_URL` | Optional API base URL override |
+| `SECAPI_API_BASE_URL` | Alias for `SECAPI_BASE_URL` |
+| `SECAPI_BEARER_TOKEN` | WorkOS bearer token for signed-in account endpoints |
+
+For normal data requests, use an API key. Dashboard and account-management methods require a WorkOS bearer token.
+
+The client sends SEC API version `2026-03-19` by default. Pinning the version makes response-contract changes explicit rather than dependent on the request date.
+
+## Retries
+
+The SDK retries transient failures for safe HTTP methods with exponential backoff and jitter. By default it retries network errors and HTTP `408`, `429`, `502`, `503`, and `504` responses, up to three retries within a 30-second budget. It honors `Retry-After` on rate limits and opens a circuit breaker after five consecutive retryable failures.
+
+Mutating requests and MCP tool calls use `POST` and are not retried automatically. Opt in only when the operation is safe to repeat:
+
+```ts
+await sec.callMcpTool(
+  "entities.resolve",
+  { ticker: "AAPL" },
+  { retry: { enabled: true, idempotencyKey: "resolve-aapl" } },
 )
 ```
 
-MCP tool calls use HTTP `POST`, so they are not retried on `502`/`503` by default. Opt in per call only when the tool is read-only or otherwise idempotent:
+Disable the built-in retry layer if your application already provides one:
 
 ```ts
-await client.mcp(
-  {
-    jsonrpc: "2.0",
-    id: "1",
-    method: "tools/call",
-    params: { name: "entities.resolve", arguments: { ticker: "AAPL" } },
-  },
-  { retry: { enabled: true, idempotencyKey: "mcp-entities-resolve-aapl" } },
-)
+const sec = new SecApiClient({ retry: false })
 ```
 
-The convenience `callMcpTool(name, arguments, options)` helper uses the same `POST /mcp` transport. Use per-call retry opt-in only for read-only tools such as `entities.resolve`, `filings.latest`, `sections.get`, `statements.get`, `owners.institutional_holders`, and `forms.list_144`.
+Retry telemetry records SDK retry attempts without sending response payloads. Set `telemetry: false` on the client or a request to disable it.
 
-## Runtime Validation
+## Filing streams
 
-All responses are validated at runtime using Zod schemas. This ensures type safety even when consuming untyped API responses.
+After creating a WebSocket stream subscription, pass its ID to the SDK. The client mints a short-lived connection ticket so the API key is not placed in the WebSocket URL:
 
-## Links
+```ts
+const stream = sec.streamFilings({
+  streamId: "stream_...",
+  forms: ["8-K"],
+  tickers: ["AAPL"],
+  onFiling: (event) => console.log(event.filing),
+  onError: (error) => console.error(error),
+})
+```
 
-- [API Documentation](https://docs.secapi.ai)
-- [Developer Portal](https://secapi.ai/developers)
-- [GitHub Repository](https://github.com/secapi-ai/secapi-js)
+Streaming uses the runtime's global `WebSocket` implementation. It works without a polyfill in modern browsers, Bun, Deno, and Node.js 21 or newer. REST methods require a standards-compatible `fetch`, available in Node.js 18 or newer and the other runtimes above.
+
+## Run the repository example
+
+The checked-in example resolves Apple, retrieves its latest 10-K, and extracts Item 1A:
+
+```bash
+git clone https://github.com/secapi-ai/secapi-js.git
+cd secapi-js
+bun install
+export SECAPI_API_KEY="secapi_live_..."
+bun run examples/agent_workflow.ts
+```
+
+## Contributing
+
+```bash
+bun install
+bun run typecheck
+bun test
+bun run build
+```
+
+Please open an issue before changing generated API contract code by hand.
+
+## Support and links
+
+- [Documentation](https://docs.secapi.ai)
+- [Get an API key](https://secapi.ai/signup)
+- [Pricing](https://secapi.ai/pricing)
+- [API status](https://status.secapi.ai)
+- [Report an SDK issue](https://github.com/secapi-ai/secapi-js/issues)
+
+## License
+
+MIT
