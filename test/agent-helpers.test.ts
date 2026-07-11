@@ -561,6 +561,45 @@ describe("SecApiClient agent helpers", () => {
     ])
   })
 
+  test("situations namespace routes paid archive and research workflows", async () => {
+    const seenUrls: string[] = []
+    const client = new SecApiClient({
+      telemetry: false,
+      fetch: async (url) => {
+        seenUrls.push(String(url))
+        return jsonResponse({ ok: true })
+      },
+    })
+
+    await client.situations.list({ types: "merger", statuses: "pending", limit: 10 })
+    await client.situations.issues({ limit: 12 })
+    await client.situations.issue(22)
+    await client.situations.feed({ types: "merger", limit: 5 })
+    await client.situations.calendar({ date_types: "vote", days: 30 })
+    await client.situations.stats({ window: "30d" })
+    await client.situations.performance({ group_by: "type" })
+    await client.situations.byForm("SC 13D", { limit: 5 })
+    await client.situations.get("sit_example")
+    await client.situations.filings("sit_example", { limit: 5 })
+    await client.situations.summary("sit_example")
+    await client.situations.export("sit_example")
+
+    expect(seenUrls).toEqual([
+      "https://api.secapi.ai/v1/situations?types=merger&statuses=pending&limit=10",
+      "https://api.secapi.ai/v1/situations/issues?limit=12",
+      "https://api.secapi.ai/v1/situations/issues/22",
+      "https://api.secapi.ai/v1/situations/feed?types=merger&limit=5",
+      "https://api.secapi.ai/v1/situations/calendar?date_types=vote&days=30",
+      "https://api.secapi.ai/v1/situations/stats?window=30d",
+      "https://api.secapi.ai/v1/situations/performance?group_by=type",
+      "https://api.secapi.ai/v1/situations/by-form/SC%2013D?limit=5",
+      "https://api.secapi.ai/v1/situations/sit_example",
+      "https://api.secapi.ai/v1/situations/sit_example/filings?limit=5",
+      "https://api.secapi.ai/v1/situations/sit_example/summary",
+      "https://api.secapi.ai/v1/situations/sit_example/export",
+    ])
+  })
+
   test("paginateFilings follows nextCursor and yields items across pages", async () => {
     const seenUrls: string[] = []
     const responses = [

@@ -950,6 +950,21 @@ export class SecApiClient {
     creditRating: (...args: Parameters<SecApiClient["macroCreditRating"]>) => this.macroCreditRating(...args),
   }
 
+  readonly situations = {
+    list: (...args: Parameters<SecApiClient["listSituations"]>) => this.listSituations(...args),
+    issues: (...args: Parameters<SecApiClient["situationsIssues"]>) => this.situationsIssues(...args),
+    issue: (...args: Parameters<SecApiClient["situationIssue"]>) => this.situationIssue(...args),
+    get: (...args: Parameters<SecApiClient["getSituation"]>) => this.getSituation(...args),
+    filings: (...args: Parameters<SecApiClient["situationFilings"]>) => this.situationFilings(...args),
+    summary: (...args: Parameters<SecApiClient["situationSummary"]>) => this.situationSummary(...args),
+    export: (...args: Parameters<SecApiClient["exportSituation"]>) => this.exportSituation(...args),
+    feed: (...args: Parameters<SecApiClient["situationsFeed"]>) => this.situationsFeed(...args),
+    calendar: (...args: Parameters<SecApiClient["situationsCalendar"]>) => this.situationsCalendar(...args),
+    stats: (...args: Parameters<SecApiClient["situationsStats"]>) => this.situationsStats(...args),
+    performance: (...args: Parameters<SecApiClient["situationsPerformance"]>) => this.situationsPerformance(...args),
+    byForm: (...args: Parameters<SecApiClient["situationsByForm"]>) => this.situationsByForm(...args),
+  }
+
   readonly portfolio = {
     optimize: (...args: Parameters<SecApiClient["portfolioOptimize"]>) => this.portfolioOptimize(...args),
     hedge: (...args: Parameters<SecApiClient["portfolioHedge"]>) => this.portfolioHedge(...args),
@@ -1898,6 +1913,77 @@ export class SecApiClient {
 
   async dilutionCoverage(params: RequestParams<{ ticker?: string }> = {}) {
     return this.get("/v1/dilution/coverage", params)
+  }
+
+  /**
+   * List durable special situations (M&A, tender offers, going-private,
+   * spin-offs, activist campaigns, restructuring, bankruptcy, ...). Pass
+   * `forms` to filter by the EDGAR forms that triggered the situation, and
+   * `enrich=false` for the minimal stripped projection.
+   */
+  async listSituations(params: RequestParams<{ types?: string | string[]; subtypes?: string | string[]; statuses?: string | string[]; tickers?: string | string[]; forms?: string | string[]; sectors?: string | string[]; market_cap?: string | string[]; country?: string; announced_from?: string; announced_to?: string; updated_from?: string; enrich?: "true" | "false"; cursor?: string | number; limit?: number; response_mode?: "compact" | "standard" | "verbose" | "agent" }> = {}) {
+    return this.get("/v1/situations", params)
+  }
+
+  /** List immutable, numbered weekly Special Situations Digest issues. */
+  async situationsIssues(params: RequestParams<{ limit?: number }> = {}) {
+    return this.get("/v1/situations/issues", params)
+  }
+
+  /** Retrieve one immutable Special Situations Digest issue by number or slug. */
+  async situationIssue(issue: string | number, options?: RequestOptions) {
+    return this.get(`/v1/situations/issues/${encodeURIComponent(String(issue))}`, options)
+  }
+
+  async situationsFeed(
+    params: RequestParams<{ types?: string | string[]; categories?: string | string[]; tickers?: string | string[]; since?: string; cursor?: string; limit?: number; response_mode?: "compact" | "standard" | "verbose" | "agent" }> = {},
+  ) {
+    return this.get("/v1/situations/feed", params)
+  }
+
+  async situationsCalendar(
+    params: RequestParams<{ types?: string | string[]; date_types?: string | string[]; tickers?: string | string[]; days?: number; cursor?: string; limit?: number }> = {},
+  ) {
+    return this.get("/v1/situations/calendar", params)
+  }
+
+  async situationsStats(params: RequestParams<{ window?: string }> = {}) {
+    return this.get("/v1/situations/stats", params)
+  }
+
+  async situationsPerformance(
+    params: RequestParams<{ types?: string | string[]; window?: string; group_by?: "type" | "subtype" }> = {},
+  ) {
+    return this.get("/v1/situations/performance", params)
+  }
+
+  /**
+   * List special situations opened or advanced by a given EDGAR form type
+   * (e.g. `SC 13D`, `SC TO-T`, `425`, `DEFM14A`). The form path segment is
+   * URL-encoded for you.
+   */
+  async situationsByForm(form: string, params: RequestParams<{ statuses?: string | string[]; tickers?: string | string[]; enrich?: "true" | "false"; cursor?: string | number; limit?: number; response_mode?: "compact" | "standard" | "verbose" | "agent" }> = {}) {
+    return this.get(`/v1/situations/by-form/${encodeURIComponent(form)}`, params)
+  }
+
+  /** Retrieve a single situation with its full per-filing timeline. */
+  async getSituation(situationId: string, params: RequestParams<{ enrich?: "true" | "false" }> = {}) {
+    return this.get(`/v1/situations/${encodeURIComponent(situationId)}`, params)
+  }
+
+  /** Retrieve a situation's per-filing timeline as a paginated sub-resource. */
+  async situationFilings(situationId: string, params: RequestParams<{ cursor?: string | number; limit?: number }> = {}) {
+    return this.get(`/v1/situations/${encodeURIComponent(situationId)}/filings`, params)
+  }
+
+  /** Retrieve a compact situation summary. */
+  async situationSummary(situationId: string, options?: RequestOptions) {
+    return this.get(`/v1/situations/${encodeURIComponent(situationId)}/summary`, options)
+  }
+
+  /** Render a source-cited Markdown Copy-for-LLM brief for one situation. */
+  async exportSituation(situationId: string, options?: RequestOptions) {
+    return this.get<string>(`/v1/situations/${encodeURIComponent(situationId)}/export`, options)
   }
 
   async form144Filings(

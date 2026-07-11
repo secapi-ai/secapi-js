@@ -86,6 +86,32 @@ const income = await sec.agentStatement("income_statement", {
 const insiders = await sec.insiders({ ticker: "AAPL", limit: 20 })
 ```
 
+## Special Situations
+
+The paid Special Situations API follows durable corporate events across their
+lifecycle and retains a separate immutable weekly archive for agent research.
+
+```ts
+// Find current pending mergers.
+const current = await sec.situations.list({
+  types: "merger",
+  statuses: "pending",
+  limit: 25,
+})
+
+// Browse a frozen weekly edition, then retrieve its full published snapshot.
+const issues = await sec.situations.issues({ limit: 12 })
+const issue = await sec.situations.issue(22)
+
+// Preserve source citations when handing a situation to another agent.
+const brief = await sec.situations.export("sit_...")
+```
+
+These authenticated calls use the Special Situations API meter classes and
+your account's current plan limits. The public website database is a separate,
+rate-limited discovery surface; use the SDK for complete archive and agent
+workflows.
+
 See the [API documentation](https://docs.secapi.ai) for endpoint coverage, parameters, response fields, and runnable tutorials.
 
 ## Pagination
