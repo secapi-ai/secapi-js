@@ -957,6 +957,7 @@ export class SecApiClient {
     get: (...args: Parameters<SecApiClient["getSituation"]>) => this.getSituation(...args),
     filings: (...args: Parameters<SecApiClient["situationFilings"]>) => this.situationFilings(...args),
     summary: (...args: Parameters<SecApiClient["situationSummary"]>) => this.situationSummary(...args),
+    underwrite: (...args: Parameters<SecApiClient["underwriteSituation"]>) => this.underwriteSituation(...args),
     export: (...args: Parameters<SecApiClient["exportSituation"]>) => this.exportSituation(...args),
     feed: (...args: Parameters<SecApiClient["situationsFeed"]>) => this.situationsFeed(...args),
     calendar: (...args: Parameters<SecApiClient["situationsCalendar"]>) => this.situationsCalendar(...args),
@@ -1979,6 +1980,11 @@ export class SecApiClient {
   /** Retrieve a compact situation summary. */
   async situationSummary(situationId: string, options?: RequestOptions) {
     return this.get(`/v1/situations/${encodeURIComponent(situationId)}/summary`, options)
+  }
+
+  /** Retrieve the paid, source-cited underwriting JSON bundle for one situation. */
+  async underwriteSituation(situationId: string, options?: RequestOptions) {
+    return this.get(`/v1/situations/${encodeURIComponent(situationId)}/underwriting-pack`, options)
   }
 
   /** Render a source-cited Markdown Copy-for-LLM brief for one situation. */

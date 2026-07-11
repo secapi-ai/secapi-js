@@ -105,12 +105,16 @@ const issue = await sec.situations.issue(22)
 
 // Preserve source citations when handing a situation to another agent.
 const brief = await sec.situations.export("sit_...")
+
+// Retrieve the paid, source-cited JSON underwriting bundle for agent workflows.
+const pack = await sec.situations.underwrite("sit_...")
 ```
 
 These authenticated calls use the Special Situations API meter classes and
 your account's current plan limits. The public website database is a separate,
 rate-limited discovery surface; use the SDK for complete archive and agent
-workflows.
+workflows. Underwriting packs include only the public/source-cited fields
+returned by the API, not TIKR or other internal-only enrichment data.
 
 See the [API documentation](https://docs.secapi.ai) for endpoint coverage, parameters, response fields, and runnable tutorials.
 

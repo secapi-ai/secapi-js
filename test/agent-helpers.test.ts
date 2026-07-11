@@ -582,6 +582,8 @@ describe("SecApiClient agent helpers", () => {
     await client.situations.get("sit_example")
     await client.situations.filings("sit_example", { limit: 5 })
     await client.situations.summary("sit_example")
+    await client.situations.underwrite("sit_example")
+    await client.underwriteSituation("sit with/slash")
     await client.situations.export("sit_example")
 
     expect(seenUrls).toEqual([
@@ -596,6 +598,8 @@ describe("SecApiClient agent helpers", () => {
       "https://api.secapi.ai/v1/situations/sit_example",
       "https://api.secapi.ai/v1/situations/sit_example/filings?limit=5",
       "https://api.secapi.ai/v1/situations/sit_example/summary",
+      "https://api.secapi.ai/v1/situations/sit_example/underwriting-pack",
+      "https://api.secapi.ai/v1/situations/sit%20with%2Fslash/underwriting-pack",
       "https://api.secapi.ai/v1/situations/sit_example/export",
     ])
   })
