@@ -167,6 +167,18 @@ export type RequestOptions = {
   telemetry?: false | TelemetryOptions
 }
 
+export type SituationWatchInput = {
+  /** At least one selector is required by the server-facing convenience helper. */
+  situationIds?: string[]
+  types?: string[]
+  subtypes?: string[]
+  statuses?: string[]
+  tickers?: string[]
+  sectors?: string[]
+  name?: string
+  delivery?: { type: "email"; config: { to: string } }
+}
+
 export type JsonValue =
   | null
   | boolean
@@ -958,6 +970,7 @@ export class SecApiClient {
     filings: (...args: Parameters<SecApiClient["situationFilings"]>) => this.situationFilings(...args),
     summary: (...args: Parameters<SecApiClient["situationSummary"]>) => this.situationSummary(...args),
     underwrite: (...args: Parameters<SecApiClient["underwriteSituation"]>) => this.underwriteSituation(...args),
+    watch: (...args: Parameters<SecApiClient["watchSituations"]>) => this.watchSituations(...args),
     export: (...args: Parameters<SecApiClient["exportSituation"]>) => this.exportSituation(...args),
     feed: (...args: Parameters<SecApiClient["situationsFeed"]>) => this.situationsFeed(...args),
     calendar: (...args: Parameters<SecApiClient["situationsCalendar"]>) => this.situationsCalendar(...args),
@@ -1464,7 +1477,7 @@ export class SecApiClient {
       name: string
       query: string
       filters?: Record<string, unknown>
-      searchMode?: "keyword"
+      searchMode?: "keyword" | "situation" | "filing_event" | "footnote" | "section_delta"
       webhookUrl?: string
       delivery?: { type: "email"; config: { to: string } }
     },
@@ -1985,6 +1998,31 @@ export class SecApiClient {
   /** Retrieve the paid, source-cited underwriting JSON bundle for one situation. */
   async underwriteSituation(situationId: string, options?: RequestOptions) {
     return this.get(`/v1/situations/${encodeURIComponent(situationId)}/underwriting-pack`, options)
+  }
+
+  /**
+   * Create a durable public Special Situations monitor. Broad watches begin at
+   * database time; exact situation watches receive filing-level provenance.
+   */
+  async watchSituations(input: SituationWatchInput, options?: RequestOptions) {
+    const filters = {
+      ...(input.situationIds?.length ? { situationIds: input.situationIds } : {}),
+      ...(input.types?.length ? { types: input.types } : {}),
+      ...(input.subtypes?.length ? { subtypes: input.subtypes } : {}),
+      ...(input.statuses?.length ? { statuses: input.statuses } : {}),
+      ...(input.tickers?.length ? { tickers: input.tickers } : {}),
+      ...(input.sectors?.length ? { sectors: input.sectors } : {}),
+    }
+    if (Object.keys(filters).length === 0) {
+      throw new Error("Situation watch requires at least one selector")
+    }
+    return this.createMonitor({
+      name: input.name ?? "Special Situations watch",
+      query: "situations.watch",
+      searchMode: "situation",
+      filters,
+      ...(input.delivery ? { delivery: input.delivery } : {}),
+    }, options)
   }
 
   /** Render a source-cited Markdown Copy-for-LLM brief for one situation. */

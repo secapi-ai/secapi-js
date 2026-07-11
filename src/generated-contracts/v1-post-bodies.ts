@@ -269,8 +269,8 @@ export const v1CreateMonitorBodySchema = z.preprocess(
       name: z.string().trim().min(1),
       query: z.string().trim().min(1),
       filters: z.record(z.string(), z.unknown()).nullish(),
-      /** Only `keyword` is currently supported for monitor execution. */
-      searchMode: z.enum(["keyword"]).nullish(),
+      /** Structured modes subscribe to the corresponding public intelligence plane. */
+      searchMode: z.enum(["keyword", "situation", "filing_event", "footnote", "section_delta"]).nullish(),
       /** Legacy single-webhook path. Kept for backward compat with existing clients. */
       webhookUrl: z.string().url().nullish(),
       /** New path: typed `{type, config}` destination. v1 ships single email destination per monitor. */

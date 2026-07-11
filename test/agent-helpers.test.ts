@@ -583,6 +583,7 @@ describe("SecApiClient agent helpers", () => {
     await client.situations.filings("sit_example", { limit: 5 })
     await client.situations.summary("sit_example")
     await client.situations.underwrite("sit_example")
+    await client.situations.watch({ types: ["merger"], tickers: ["AAPL"] })
     await client.underwriteSituation("sit with/slash")
     await client.situations.export("sit_example")
 
@@ -599,9 +600,31 @@ describe("SecApiClient agent helpers", () => {
       "https://api.secapi.ai/v1/situations/sit_example/filings?limit=5",
       "https://api.secapi.ai/v1/situations/sit_example/summary",
       "https://api.secapi.ai/v1/situations/sit_example/underwriting-pack",
+      "https://api.secapi.ai/v1/monitors",
       "https://api.secapi.ai/v1/situations/sit%20with%2Fslash/underwriting-pack",
       "https://api.secapi.ai/v1/situations/sit_example/export",
     ])
+  })
+
+  test("situations watch creates a typed monitor and rejects unscoped watches", async () => {
+    const seen: Array<{ body?: unknown }> = []
+    const client = new SecApiClient({
+      telemetry: false,
+      fetch: async (_url, init) => {
+        seen.push({ body: init?.body ? JSON.parse(String(init.body)) : undefined })
+        return jsonResponse({ ok: true })
+      },
+    })
+
+    await client.situations.watch({ situationIds: ["sit_abc123"], delivery: { type: "email", config: { to: "you@example.com" } } })
+    expect(seen[0]?.body).toEqual({
+      name: "Special Situations watch",
+      query: "situations.watch",
+      searchMode: "situation",
+      filters: { situationIds: ["sit_abc123"] },
+      delivery: { type: "email", config: { to: "you@example.com" } },
+    })
+    await expect(client.situations.watch({})).rejects.toThrow("requires at least one selector")
   })
 
   test("paginateFilings follows nextCursor and yields items across pages", async () => {

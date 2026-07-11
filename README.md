@@ -108,6 +108,13 @@ const brief = await sec.situations.export("sit_...")
 
 // Retrieve the paid, source-cited JSON underwriting bundle for agent workflows.
 const pack = await sec.situations.underwrite("sit_...")
+
+// Create a durable watch. Broad filters start from creation time; exact
+// situationIds watches include filing-level provenance in monitor.match events.
+const watch = await sec.situations.watch({
+  types: ["merger", "tender_offer"],
+  tickers: ["AAPL", "MSFT"],
+})
 ```
 
 These authenticated calls use the Special Situations API meter classes and
