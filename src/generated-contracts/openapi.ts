@@ -1286,6 +1286,18 @@ const jsonResponseOneOf = (names: string[], description = "Successful response")
   },
 })
 
+// Mirrors the deployed public Special Situations operation posture. Meter
+// classes remain runtime billing behavior, rather than a speculative OpenAPI
+// extension: production does not expose them in the document.
+const situationsOperationMetadata = (routeId: "situations.collection" | "situations.issues" | "situations.issue" | "situations.member") => ({
+  security: [{ ApiKeyAuth: [] }, { BearerAuth: [] }],
+  "x-secapi-route-id": routeId,
+  "x-secapi-access": "authenticated",
+  "x-secapi-kind": "api",
+  "x-secapi-docs": "public",
+  "x-secapi-smoke": "local",
+})
+
 const jsonStatusResponse = (status: string, name: string, description = "Successful response") => ({
   responses: {
     [status]: {
@@ -4328,6 +4340,7 @@ export const openApiDocument = {
     "/v1/situations": {
       get: {
         tags: ["Special Situations"],
+        ...situationsOperationMetadata("situations.collection"),
         summary: "List durable SEC-derived special situations with lifecycle, terms, and market context",
         parameters: situationsListParameters,
         ...jsonResponseOneOf(["SituationList", "SituationStrippedList"]),
@@ -4336,6 +4349,7 @@ export const openApiDocument = {
     "/v1/situations/issues": {
       get: {
         tags: ["Special Situations"],
+        ...situationsOperationMetadata("situations.issues"),
         summary: "List immutable, numbered weekly Special Situations Digest issues",
         parameters: [{ name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 24 } }],
         ...jsonResponse("SituationWeeklyIssueList"),
@@ -4344,6 +4358,7 @@ export const openApiDocument = {
     "/v1/situations/issues/{issue}": {
       get: {
         tags: ["Special Situations"],
+        ...situationsOperationMetadata("situations.issue"),
         summary: "Retrieve one immutable weekly Special Situations Digest issue by number or slug",
         parameters: [{ name: "issue", in: "path", required: true, schema: { type: "string" } }],
         ...jsonResponse("SituationWeeklyIssue"),
@@ -4352,6 +4367,7 @@ export const openApiDocument = {
     "/v1/situations/feed": {
       get: {
         tags: ["Special Situations"],
+        ...situationsOperationMetadata("situations.member"),
         summary: "Reverse-chronological feed of SEC-derived situation events",
         parameters: [
           { name: "types", in: "query", required: false, schema: { type: "string" } },
@@ -4367,6 +4383,7 @@ export const openApiDocument = {
     "/v1/situations/feed.rss": {
       get: {
         tags: ["Special Situations"],
+        ...situationsOperationMetadata("situations.member"),
         summary: "Paid authenticated RSS projection of SEC-derived situation events",
         parameters: [
           { name: "types", in: "query", required: false, schema: { type: "string" } },
@@ -4379,6 +4396,7 @@ export const openApiDocument = {
     "/v1/situations/calendar": {
       get: {
         tags: ["Special Situations"],
+        ...situationsOperationMetadata("situations.member"),
         summary: "Upcoming SEC-derived situation key dates",
         parameters: [
           { name: "types", in: "query", required: false, schema: { type: "string" } },
@@ -4394,6 +4412,7 @@ export const openApiDocument = {
     "/v1/situations/stats": {
       get: {
         tags: ["Special Situations"],
+        ...situationsOperationMetadata("situations.member"),
         summary: "Situation counts by type, status, sector, and market-cap bucket",
         parameters: [{ name: "window", in: "query", required: false, schema: { type: "string" } }],
         ...jsonResponse("SituationStats"),
@@ -4402,6 +4421,7 @@ export const openApiDocument = {
     "/v1/situations/performance": {
       get: {
         tags: ["Special Situations"],
+        ...situationsOperationMetadata("situations.member"),
         summary: "Closed-situation outcome cohorts",
         parameters: [
           { name: "types", in: "query", required: false, schema: { type: "string" } },
@@ -4414,6 +4434,7 @@ export const openApiDocument = {
     "/v1/situations/by-form/{form}": {
       get: {
         tags: ["Special Situations"],
+        ...situationsOperationMetadata("situations.member"),
         summary: "List situations opened or advanced by an EDGAR form type",
         parameters: [
           { name: "form", in: "path", required: true, schema: { type: "string" } },
@@ -4437,6 +4458,7 @@ export const openApiDocument = {
     "/v1/situations/{situation_id}/filings": {
       get: {
         tags: ["Special Situations"],
+        ...situationsOperationMetadata("situations.member"),
         summary: "Retrieve a situation filing timeline",
         parameters: [
           { name: "situation_id", in: "path", required: true, schema: { type: "string" } },
@@ -4449,6 +4471,7 @@ export const openApiDocument = {
     "/v1/situations/{situation_id}/summary": {
       get: {
         tags: ["Special Situations"],
+        ...situationsOperationMetadata("situations.member"),
         summary: "Retrieve a compact situation summary",
         parameters: [{ name: "situation_id", in: "path", required: true, schema: { type: "string" } }],
         ...jsonResponse("SituationSummary"),
@@ -4457,6 +4480,7 @@ export const openApiDocument = {
     "/v1/situations/{situation_id}/underwriting-pack": {
       get: {
         tags: ["Special Situations"],
+        ...situationsOperationMetadata("situations.member"),
         summary: "Retrieve a deterministic, source-cited underwriting pack",
         parameters: [{ name: "situation_id", in: "path", required: true, schema: { type: "string" } }],
         ...jsonResponse("SituationUnderwritingPack"),
@@ -4465,6 +4489,7 @@ export const openApiDocument = {
     "/v1/situations/{situation_id}/export": {
       get: {
         tags: ["Special Situations"],
+        ...situationsOperationMetadata("situations.member"),
         summary: "Render a source-cited Markdown Copy-for-LLM brief",
         parameters: [{ name: "situation_id", in: "path", required: true, schema: { type: "string" } }],
         responses: { "200": { description: "Markdown situation brief", content: { "text/markdown": { schema: { type: "string" } } } } },
@@ -4473,6 +4498,7 @@ export const openApiDocument = {
     "/v1/situations/{situation_id}": {
       get: {
         tags: ["Special Situations"],
+        ...situationsOperationMetadata("situations.member"),
         summary: "Retrieve a single situation with its filing timeline",
         parameters: [
           { name: "situation_id", in: "path", required: true, schema: { type: "string" } },

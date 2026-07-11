@@ -1,13 +1,4 @@
 import { z } from "zod"
-import {
-  degradedStateSchema,
-  freshnessMetadataSchema,
-  materializationMetadataSchema,
-  methodologyMetadataSchema,
-  revisionMetadataSchema,
-  sourceRightsMetadataSchema,
-} from "./foundation.js"
-import { provenanceSchema } from "./schemas.js"
 import { dilutionVerificationSchema } from "./dilution.js"
 
 export const SITUATION_TYPES = [
@@ -216,16 +207,6 @@ export function formToSituationTypes(form: string): SituationType[] {
   return matched
 }
 
-const situationInvestorMetadataShape = {
-  provenance: provenanceSchema,
-  freshness: freshnessMetadataSchema.optional(),
-  materialization: materializationMetadataSchema.optional(),
-  sourceRights: sourceRightsMetadataSchema,
-  methodology: methodologyMetadataSchema.optional(),
-  revision: revisionMetadataSchema.optional(),
-  degradedState: degradedStateSchema.nullable().optional(),
-} as const
-
 export const situationTermsSchema = z.object({
   counterparty: z.string().nullable().optional(),
   counterpartyTicker: z.string().nullable().optional(),
@@ -287,7 +268,6 @@ export const situationSchema = z.object({
   latestEventAt: z.string().nullable(),
   providerKey: z.string(),
   verification: dilutionVerificationSchema,
-  ...situationInvestorMetadataShape,
 })
 
 export type Situation = z.infer<typeof situationSchema>

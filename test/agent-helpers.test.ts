@@ -8,7 +8,7 @@ import {
   SecApiValidationError,
   type OmniDatastreamClientOptions,
 } from "../src/index.js"
-import { openApiDocument, situationsByFormQuerySchema, situationsListQuerySchema } from "../src/generated-contracts/index.js"
+import { openApiDocument, situationSchema, situationsByFormQuerySchema, situationsListQuerySchema } from "../src/generated-contracts/index.js"
 
 function jsonResponse(body: unknown = { ok: true }) {
   return new Response(JSON.stringify(body), {
@@ -160,6 +160,22 @@ describe("SecApiClient agent helpers", () => {
     ])
     expect(situationsListQuerySchema.shape).not.toHaveProperty("since")
     expect(situationsByFormQuerySchema.parse({ subtypes: ["definitive"], market_cap: ["large"] })).toEqual({ subtypes: ["definitive"], market_cap: ["large"] })
+
+    const situationOperations = situationPaths.map((path) => openApiDocument.paths[path].get)
+    for (const operation of situationOperations) {
+      expect(operation.security).toEqual([{ ApiKeyAuth: [] }, { BearerAuth: [] }])
+      expect(operation["x-secapi-access"]).toBe("authenticated")
+      expect(operation["x-secapi-kind"]).toBe("api")
+      expect(operation["x-secapi-docs"]).toBe("public")
+      expect(operation["x-secapi-smoke"]).toBe("local")
+    }
+    expect(openApiDocument.paths["/v1/situations"].get["x-secapi-route-id"]).toBe("situations.collection")
+    expect(openApiDocument.paths["/v1/situations/issues"].get["x-secapi-route-id"]).toBe("situations.issues")
+    expect(openApiDocument.paths["/v1/situations/issues/{issue}"].get["x-secapi-route-id"]).toBe("situations.issue")
+    expect(openApiDocument.paths["/v1/situations/feed"].get["x-secapi-route-id"]).toBe("situations.member")
+    expect(situationSchema.shape).toHaveProperty("providerKey")
+    expect(situationSchema.shape).not.toHaveProperty("sourceRights")
+    expect(situationSchema.shape).not.toHaveProperty("provenance")
   })
 
   test("situations watch creates a public situation monitor with email delivery", async () => {
