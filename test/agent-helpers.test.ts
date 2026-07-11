@@ -8,6 +8,7 @@ import {
   SecApiValidationError,
   type OmniDatastreamClientOptions,
 } from "../src/index.js"
+import { openApiDocument, situationsByFormQuerySchema, situationsListQuerySchema } from "../src/generated-contracts/index.js"
 
 function jsonResponse(body: unknown = { ok: true }) {
   return new Response(JSON.stringify(body), {
@@ -17,6 +18,251 @@ function jsonResponse(body: unknown = { ok: true }) {
 }
 
 describe("SecApiClient agent helpers", () => {
+  test("groups the complete paid situations read workflow", async () => {
+    const paths: string[] = []
+    const client = new SecApiClient({
+      apiKey: "test_key",
+      telemetry: false,
+      fetch: async (url) => {
+        const path = new URL(String(url)).pathname
+        paths.push(path)
+        if (path.endsWith("/export")) {
+          return new Response("# Example Corp", { headers: { "content-type": "text/markdown; charset=utf-8" } })
+        }
+        return jsonResponse({ ok: true })
+      },
+    })
+
+    await client.situations.feed()
+    await client.situations.calendar()
+    await client.situations.stats()
+    await client.situations.performance()
+    await client.situations.export("sit_123")
+
+    expect(paths).toEqual([
+      "/v1/situations/feed",
+      "/v1/situations/calendar",
+      "/v1/situations/stats",
+      "/v1/situations/performance",
+      "/v1/situations/sit_123/export",
+    ])
+  })
+
+  test("groups every Special Situations archive and underwriting operation", async () => {
+    const paths: string[] = []
+    const client = new SecApiClient({
+      apiKey: "test_key",
+      telemetry: false,
+      fetch: async (url) => {
+        const path = new URL(String(url)).pathname
+        paths.push(path)
+        if (path.endsWith("/export")) {
+          return new Response("# Example Corp", { headers: { "content-type": "text/markdown; charset=utf-8" } })
+        }
+        return jsonResponse({ ok: true })
+      },
+    })
+
+    await client.situations.list({ types: "merger" })
+    await client.situations.issues({ limit: 3 })
+    await client.situations.issue(22)
+    await client.situations.byForm("SC 13D")
+    await client.situations.get("sit_123")
+    await client.situations.filings("sit_123")
+    await client.situations.summary("sit_123")
+    await client.situations.underwrite("sit_123")
+    await client.situations.export("sit_123")
+    await client.situations.feed()
+    await client.situations.calendar()
+    await client.situations.stats()
+    await client.situations.performance()
+
+    expect(paths).toEqual([
+      "/v1/situations",
+      "/v1/situations/issues",
+      "/v1/situations/issues/22",
+      "/v1/situations/by-form/SC%2013D",
+      "/v1/situations/sit_123",
+      "/v1/situations/sit_123/filings",
+      "/v1/situations/sit_123/summary",
+      "/v1/situations/sit_123/underwriting-pack",
+      "/v1/situations/sit_123/export",
+      "/v1/situations/feed",
+      "/v1/situations/calendar",
+      "/v1/situations/stats",
+      "/v1/situations/performance",
+    ])
+  })
+
+  test("serializes public situations filters and the RSS feed consistently", async () => {
+    const seen: string[] = []
+    const client = new SecApiClient({
+      telemetry: false,
+      fetch: async (url) => {
+        seen.push(String(url))
+        if (String(url).includes("feed.rss")) {
+          return new Response("<rss version=\"2.0\" />", { headers: { "content-type": "application/rss+xml; charset=utf-8" } })
+        }
+        return jsonResponse()
+      },
+    })
+
+    await client.situations.list({
+      subtypes: ["definitive"],
+      market_cap: ["large", "mega"],
+      announced_from: "2026-01-01",
+      announced_to: "2026-06-30",
+      updated_from: "2026-07-01T00:00:00.000Z",
+    })
+    await client.situations.byForm("SC 13D", {
+      subtypes: ["definitive"],
+      statuses: ["pending"],
+      tickers: ["AAPL", "MSFT"],
+      sectors: ["Technology"],
+      market_cap: ["large", "mega"],
+      country: "US",
+      announced_from: "2026-01-01",
+      announced_to: "2026-06-30",
+      updated_from: "2026-07-01T00:00:00.000Z",
+    })
+    const rss = await client.situations.feedRss({ types: ["merger"], tickers: ["AAPL", "MSFT"] })
+
+    expect(rss).toBe("<rss version=\"2.0\" />")
+    expect(seen).toEqual([
+      "https://api.secapi.ai/v1/situations?subtypes=definitive&market_cap=large%2Cmega&announced_from=2026-01-01&announced_to=2026-06-30&updated_from=2026-07-01T00%3A00%3A00.000Z",
+      "https://api.secapi.ai/v1/situations/by-form/SC%2013D?subtypes=definitive&statuses=pending&tickers=AAPL%2CMSFT&sectors=Technology&market_cap=large%2Cmega&country=US&announced_from=2026-01-01&announced_to=2026-06-30&updated_from=2026-07-01T00%3A00%3A00.000Z",
+      "https://api.secapi.ai/v1/situations/feed.rss?types=merger&tickers=AAPL%2CMSFT",
+    ])
+  })
+
+  test("keeps the generated public Situations contract aligned with SDK routes", () => {
+    const situationPaths = Object.keys(openApiDocument.paths).filter((path) => path.includes("situations"))
+
+    expect(situationPaths).toEqual([
+      "/v1/situations",
+      "/v1/situations/issues",
+      "/v1/situations/issues/{issue}",
+      "/v1/situations/feed",
+      "/v1/situations/feed.rss",
+      "/v1/situations/calendar",
+      "/v1/situations/stats",
+      "/v1/situations/performance",
+      "/v1/situations/by-form/{form}",
+      "/v1/situations/{situation_id}/filings",
+      "/v1/situations/{situation_id}/summary",
+      "/v1/situations/{situation_id}/underwriting-pack",
+      "/v1/situations/{situation_id}/export",
+      "/v1/situations/{situation_id}",
+    ])
+    expect(openApiDocument.paths["/v1/situations"].get.parameters.map((parameter) => parameter.name)).not.toContain("since")
+    expect(openApiDocument.paths["/v1/situations/by-form/{form}"].get.parameters.map((parameter) => parameter.name)).toEqual([
+      "form", "subtypes", "statuses", "tickers", "sectors", "market_cap", "country", "announced_from", "announced_to", "updated_from", "enrich", "cursor", "limit", "response_mode",
+    ])
+    expect(situationsListQuerySchema.shape).not.toHaveProperty("since")
+    expect(situationsByFormQuerySchema.parse({ subtypes: ["definitive"], market_cap: ["large"] })).toEqual({ subtypes: ["definitive"], market_cap: ["large"] })
+  })
+
+  test("situations watch creates a public situation monitor with email delivery", async () => {
+    const seen: Array<{ url: string; method?: string; body?: unknown }> = []
+    const client = new SecApiClient({
+      telemetry: false,
+      fetch: async (url, init) => {
+        seen.push({
+          url: String(url),
+          method: init?.method,
+          body: init?.body ? JSON.parse(String(init.body)) : undefined,
+        })
+        return jsonResponse({ ok: true })
+      },
+    })
+
+    await client.situations.watch({
+      name: "Acquisition watch",
+      types: ["merger", "tender_offer"],
+      tickers: ["AAPL", "MSFT"],
+      startAt: "2026-07-10T16:00:00.000Z",
+      email: "  you@example.com  ",
+    })
+
+    expect(seen).toEqual([
+      {
+        url: "https://api.secapi.ai/v1/monitors",
+        method: "POST",
+        body: {
+          name: "Acquisition watch",
+          query: "situations.watch",
+          searchMode: "situation",
+          filters: { types: ["merger", "tender_offer"], tickers: ["AAPL", "MSFT"] },
+          startAt: "2026-07-10T16:00:00.000Z",
+          delivery: { type: "email", config: { to: "you@example.com" } },
+        },
+      },
+    ])
+  })
+
+  test("situations watch creates a public situation monitor with organization webhook fanout", async () => {
+    const seen: Array<{ url: string; method?: string; body?: unknown }> = []
+    const client = new SecApiClient({
+      telemetry: false,
+      fetch: async (url, init) => {
+        seen.push({
+          url: String(url),
+          method: init?.method,
+          body: init?.body ? JSON.parse(String(init.body)) : undefined,
+        })
+        return jsonResponse({ ok: true })
+      },
+    })
+
+    await client.situations.watch({
+      situationIds: ["sit_0123456789abcdef0123"],
+      statuses: ["announced"],
+      sectors: ["Technology"],
+      useOrgWebhooks: true,
+    })
+
+    expect(seen).toEqual([
+      {
+        url: "https://api.secapi.ai/v1/monitors",
+        method: "POST",
+        body: {
+          name: "Special Situations watch",
+          query: "situations.watch",
+          searchMode: "situation",
+          filters: {
+            situationIds: ["sit_0123456789abcdef0123"],
+            statuses: ["announced"],
+            sectors: ["Technology"],
+          },
+          delivery: { type: "webhook", config: { organizationEventFanout: true } },
+        },
+      },
+    ])
+  })
+
+  test("situations watch rejects missing filters and invalid delivery choices before fetch", async () => {
+    const client = new SecApiClient({
+      telemetry: false,
+      fetch: async () => {
+        throw new Error("fetch should not run for invalid situations.watch options")
+      },
+    })
+
+    await expect(client.situations.watch({ email: "you@example.com" } as never)).rejects.toMatchObject({
+      code: "client_situation_watch_filter_required",
+    })
+    await expect(client.situations.watch({ types: ["merger"] } as never)).rejects.toMatchObject({
+      code: "client_situation_watch_delivery_required",
+    })
+    await expect(client.situations.watch({
+      types: ["merger"],
+      email: "you@example.com",
+      useOrgWebhooks: true,
+    } as never)).rejects.toMatchObject({
+      code: "client_situation_watch_delivery_conflict",
+    })
+  })
+
   test("loads auth and base URL from environment when constructor options are omitted", async () => {
     const previous = {
       apiKey: process.env.SECAPI_API_KEY,
@@ -852,6 +1098,13 @@ describe("SecApiClient agent helpers", () => {
       query: "latest 8-K filings",
       filters: { forms: ["8-K", "8-K/A"], tickers: ["AAPL", "AMZN"] },
     })
+    await client.createMonitor({
+      name: "Exact situation monitor",
+      query: "situations.watch",
+      searchMode: "situation",
+      filters: { situationIds: ["sit_0123456789abcdef0123"] },
+      delivery: { type: "webhook", config: { organizationEventFanout: true } },
+    })
     await client.monitorMatches("mon/with spaces", { limit: 5 })
 
     expect(seen[0]).toEqual({
@@ -873,6 +1126,17 @@ describe("SecApiClient agent helpers", () => {
       },
     })
     expect(seen[2]).toEqual({
+      url: "https://api.secapi.ai/v1/monitors",
+      method: "POST",
+      body: {
+        name: "Exact situation monitor",
+        query: "situations.watch",
+        searchMode: "situation",
+        filters: { situationIds: ["sit_0123456789abcdef0123"] },
+        delivery: { type: "webhook", config: { organizationEventFanout: true } },
+      },
+    })
+    expect(seen[3]).toEqual({
       url: "https://api.secapi.ai/v1/monitors/mon%2Fwith%20spaces/matches?limit=5",
       method: undefined,
       body: undefined,
@@ -952,6 +1216,25 @@ describe("SecApiClient agent helpers", () => {
         method: "POST",
       },
     ])
+  })
+
+  test("situations export escapes opaque ids and is available from the namespace alias", async () => {
+    const seen: string[] = []
+    const client = new SecApiClient({
+      telemetry: false,
+      fetch: async (url) => {
+        seen.push(String(url))
+        return new Response("# Situation brief", {
+          status: 200,
+          headers: { "content-type": "text/markdown; charset=utf-8" },
+        })
+      },
+    })
+
+    const markdown = await client.situations.export("sit/with spaces")
+
+    expect(markdown).toBe("# Situation brief")
+    expect(seen).toEqual(["https://api.secapi.ai/v1/situations/sit%2Fwith%20spaces/export"])
   })
 
   test("filing helpers escape opaque path ids", async () => {

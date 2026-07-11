@@ -122,6 +122,7 @@ function dashboardSettingsPayload(overrides: Record<string, unknown> = {}) {
 
 describe("SecApiClient retry behavior", () => {
   test("SDK_VERSION matches package metadata", async () => {
+    expect(SDK_VERSION).toBe("1.2.0")
     expect(SDK_VERSION).toBe(await packageVersion())
   })
 

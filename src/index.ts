@@ -67,7 +67,20 @@ import {
   modelFactorAnalysisSchema,
   responseViewSchema,
 } from "./generated-contracts/index.js"
-import type { Entity, Filing, Section } from "./generated-contracts/index.js"
+import type {
+  Entity,
+  Filing,
+  MarketCapBucket,
+  Section,
+  SituationCalendarDateType,
+  SituationEventCategory,
+  SituationStatus,
+  SituationSubtype,
+  SituationType,
+  SituationUnderwritingPack,
+  SituationWeeklyIssue,
+  SituationWeeklyIssueList,
+} from "./generated-contracts/index.js"
 import type { z } from "zod"
 
 /**
@@ -79,7 +92,7 @@ export type ResponseView = z.infer<typeof responseViewSchema>
 
 const DEFAULT_BASE_URL = "https://api.secapi.ai"
 const DEFAULT_API_VERSION = "2026-03-19"
-export const SDK_VERSION = "1.1.0"
+export const SDK_VERSION = "1.2.0"
 const POSTHOG_CAPTURE_HOST = "https://us.i.posthog.com"
 
 const SAFE_RETRY_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
@@ -403,6 +416,98 @@ export type DashboardAppearanceUpdate = z.infer<typeof accountUpdateDashboardApp
 export type DashboardProfileUpdate = z.infer<typeof accountUpdateDashboardProfileBodySchema>
 export type DashboardOrganizationUpdate = z.infer<typeof accountUpdateDashboardOrganizationBodySchema>
 
+export type MonitorEmailDelivery = { type: "email"; config: { to: string } }
+export type MonitorWebhookFanoutDelivery = { type: "webhook"; config: { organizationEventFanout: true } }
+
+export type SituationWatchFilters = {
+  situationIds?: string[]
+  types?: SituationType[]
+  subtypes?: SituationSubtype[]
+  statuses?: SituationStatus[]
+  tickers?: string[]
+  sectors?: string[]
+}
+
+type SituationWatchDelivery =
+  | { email: string; useOrgWebhooks?: never }
+  | { useOrgWebhooks: true; email?: never }
+
+export type SituationWatchParams = SituationWatchFilters & SituationWatchDelivery & {
+  name?: string
+  startAt?: string
+}
+
+type CommaSeparated<T extends string = string> = T | T[]
+
+export type SituationsListParams = {
+  types?: CommaSeparated<SituationType>
+  subtypes?: CommaSeparated<SituationSubtype>
+  statuses?: CommaSeparated<SituationStatus>
+  tickers?: CommaSeparated
+  forms?: CommaSeparated
+  sectors?: CommaSeparated
+  market_cap?: CommaSeparated<MarketCapBucket>
+  country?: string
+  announced_from?: string
+  announced_to?: string
+  updated_from?: string
+  enrich?: "true" | "false"
+  cursor?: string | number
+  limit?: number
+  response_mode?: "compact" | "standard" | "verbose" | "agent"
+}
+
+export type SituationsByFormParams = Omit<SituationsListParams, "types" | "forms">
+
+export type SituationsFeedParams = {
+  types?: CommaSeparated<SituationType>
+  categories?: CommaSeparated<SituationEventCategory>
+  tickers?: CommaSeparated
+  since?: string
+  cursor?: string | number
+  limit?: number
+  response_mode?: "compact" | "standard" | "verbose" | "agent"
+}
+
+export type SituationsFeedRssParams = Pick<SituationsFeedParams, "types" | "categories" | "tickers">
+
+export type SituationsCalendarParams = {
+  types?: CommaSeparated<SituationType>
+  date_types?: CommaSeparated<SituationCalendarDateType>
+  tickers?: CommaSeparated
+  days?: number
+  cursor?: string | number
+  limit?: number
+}
+
+export type SituationsPerformanceParams = {
+  types?: CommaSeparated<SituationType>
+  window?: string
+  group_by?: "type" | "subtype"
+}
+
+export type KeywordMonitorCreateBody = {
+  name: string
+  query: string
+  filters?: Record<string, unknown>
+  searchMode?: "keyword"
+  startAt?: string
+  webhookUrl?: string
+  delivery?: MonitorEmailDelivery
+}
+
+export type SituationMonitorCreateBody = {
+  name: string
+  query: string
+  searchMode: "situation"
+  filters: SituationWatchFilters
+  startAt?: string
+  delivery: MonitorEmailDelivery | MonitorWebhookFanoutDelivery
+  webhookUrl?: never
+}
+
+export type CreateMonitorBody = KeywordMonitorCreateBody | SituationMonitorCreateBody
+
 type ParsedResponse = {
   payload: unknown
   requestId?: string
@@ -579,6 +684,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function nestedRecord(value: unknown, key: string): Record<string, unknown> | undefined {
   return isRecord(value) && isRecord(value[key]) ? value[key] as Record<string, unknown> : undefined
+}
+
+function compactSituationWatchFilters(params: SituationWatchFilters): SituationWatchFilters {
+  return {
+    ...(params.situationIds?.length ? { situationIds: params.situationIds } : {}),
+    ...(params.types?.length ? { types: params.types } : {}),
+    ...(params.subtypes?.length ? { subtypes: params.subtypes } : {}),
+    ...(params.statuses?.length ? { statuses: params.statuses } : {}),
+    ...(params.tickers?.length ? { tickers: params.tickers } : {}),
+    ...(params.sectors?.length ? { sectors: params.sectors } : {}),
+  }
 }
 
 function defaultPageItems<T>(page: unknown): readonly T[] {
@@ -948,6 +1064,24 @@ export class SecApiClient {
     regimes: (...args: Parameters<SecApiClient["macroRegimes"]>) => this.macroRegimes(...args),
     creditRatings: (...args: Parameters<SecApiClient["macroCreditRatings"]>) => this.macroCreditRatings(...args),
     creditRating: (...args: Parameters<SecApiClient["macroCreditRating"]>) => this.macroCreditRating(...args),
+  }
+
+  readonly situations = {
+    list: (...args: Parameters<SecApiClient["listSituations"]>) => this.listSituations(...args),
+    issues: (...args: Parameters<SecApiClient["situationsIssues"]>) => this.situationsIssues(...args),
+    issue: (...args: Parameters<SecApiClient["situationIssue"]>) => this.situationIssue(...args),
+    byForm: (...args: Parameters<SecApiClient["situationsByForm"]>) => this.situationsByForm(...args),
+    get: (...args: Parameters<SecApiClient["getSituation"]>) => this.getSituation(...args),
+    filings: (...args: Parameters<SecApiClient["situationFilings"]>) => this.situationFilings(...args),
+    summary: (...args: Parameters<SecApiClient["situationSummary"]>) => this.situationSummary(...args),
+    underwrite: (...args: Parameters<SecApiClient["underwriteSituation"]>) => this.underwriteSituation(...args),
+    export: (...args: Parameters<SecApiClient["exportSituation"]>) => this.exportSituation(...args),
+    watch: (...args: Parameters<SecApiClient["watchSituations"]>) => this.watchSituations(...args),
+    feed: (...args: Parameters<SecApiClient["situationsFeed"]>) => this.situationsFeed(...args),
+    feedRss: (...args: Parameters<SecApiClient["situationsFeedRss"]>) => this.situationsFeedRss(...args),
+    calendar: (...args: Parameters<SecApiClient["situationsCalendar"]>) => this.situationsCalendar(...args),
+    stats: (...args: Parameters<SecApiClient["situationsStats"]>) => this.situationsStats(...args),
+    performance: (...args: Parameters<SecApiClient["situationsPerformance"]>) => this.situationsPerformance(...args),
   }
 
   readonly portfolio = {
@@ -1444,14 +1578,7 @@ export class SecApiClient {
   }
 
   async createMonitor(
-    body: {
-      name: string
-      query: string
-      filters?: Record<string, unknown>
-      searchMode?: "keyword"
-      webhookUrl?: string
-      delivery?: { type: "email"; config: { to: string } }
-    },
+    body: CreateMonitorBody,
     options?: RequestOptions,
   ) {
     return this.request("/v1/monitors", {
@@ -2014,6 +2141,37 @@ export class SecApiClient {
     return this.get(`/v1/macro/credit-ratings/${encodeURIComponent(country)}`)
   }
 
+  async situationsFeed(
+    params: RequestParams<SituationsFeedParams> = {},
+  ) {
+    return this.get("/v1/situations/feed", params)
+  }
+
+  /** Return the paid authenticated RSS projection of the Special Situations feed. */
+  async situationsFeedRss(params: RequestParams<SituationsFeedRssParams> = {}) {
+    return this.get<string>("/v1/situations/feed.rss", params)
+  }
+
+  async situationsCalendar(
+    params: RequestParams<SituationsCalendarParams> = {},
+  ) {
+    return this.get("/v1/situations/calendar", params)
+  }
+
+  async situationsStats(params: RequestParams<{ window?: string }> = {}) {
+    return this.get("/v1/situations/stats", params)
+  }
+
+  async situationsPerformance(
+    params: RequestParams<SituationsPerformanceParams> = {},
+  ) {
+    return this.get("/v1/situations/performance", params)
+  }
+
+  async situationDetail(situationId: string, params: RequestParams<Record<string, never>> = {}) {
+    return this.get(`/v1/situations/${encodeURIComponent(situationId)}`, params)
+  }
+
   async factorCatalog(params: RequestParams<FactorCatalogParams> = {}) {
     return this.get("/v1/factors/catalog", params)
   }
@@ -2513,6 +2671,77 @@ export class SecApiClient {
     }, undefined, options)
   }
 
+  async listSituations(params: RequestParams<SituationsListParams> = {}) {
+    return this.get("/v1/situations", params)
+  }
+
+  async situationsIssues(params: RequestParams<{ limit?: number }> = {}) {
+    return this.get<SituationWeeklyIssueList>("/v1/situations/issues", params)
+  }
+
+  async situationIssue(issue: string | number, options?: RequestOptions) {
+    return this.request<SituationWeeklyIssue>(`/v1/situations/issues/${encodeURIComponent(String(issue))}`, {}, undefined, options)
+  }
+
+  async situationsByForm(form: string, params: RequestParams<SituationsByFormParams> = {}) {
+    return this.get(`/v1/situations/by-form/${encodeURIComponent(form)}`, params)
+  }
+
+  async getSituation(situationId: string, params: RequestParams<{ enrich?: "true" | "false" }> = {}) {
+    return this.get(`/v1/situations/${encodeURIComponent(situationId)}`, params)
+  }
+
+  async situationFilings(situationId: string, params: RequestParams<{ cursor?: number; limit?: number }> = {}) {
+    return this.get(`/v1/situations/${encodeURIComponent(situationId)}/filings`, params)
+  }
+
+  async situationSummary(situationId: string, options?: RequestOptions) {
+    return this.request(`/v1/situations/${encodeURIComponent(situationId)}/summary`, {}, undefined, options)
+  }
+
+  async exportSituation(situationId: string, options?: RequestOptions) {
+    return this.request<string>(`/v1/situations/${encodeURIComponent(situationId)}/export`, {}, undefined, options)
+  }
+
+  async underwriteSituation(situationId: string, options?: RequestOptions) {
+    return this.request<SituationUnderwritingPack>(`/v1/situations/${encodeURIComponent(situationId)}/underwriting-pack`, {}, undefined, options)
+  }
+
+  async watchSituations(params: SituationWatchParams, options?: RequestOptions) {
+    const filters = compactSituationWatchFilters(params)
+    if (Object.keys(filters).length === 0) {
+      throw new SecApiError({
+        message: "situations.watch requires at least one filter: situationIds, types, subtypes, statuses, tickers, or sectors.",
+        status: 0,
+        code: "client_situation_watch_filter_required",
+      })
+    }
+
+    const email = typeof params.email === "string" ? params.email.trim() : undefined
+    const hasEmail = Boolean(email)
+    const hasWebhookFanout = params.useOrgWebhooks === true
+    if (hasEmail === hasWebhookFanout) {
+      throw new SecApiError({
+        message: "situations.watch requires exactly one delivery destination: email or useOrgWebhooks.",
+        status: 0,
+        code: hasEmail ? "client_situation_watch_delivery_conflict" : "client_situation_watch_delivery_required",
+      })
+    }
+
+    const delivery: MonitorEmailDelivery | MonitorWebhookFanoutDelivery = hasEmail
+      ? { type: "email", config: { to: email! } }
+      : { type: "webhook", config: { organizationEventFanout: true } }
+
+    return this.createMonitor({
+      name: params.name ?? "Special Situations watch",
+      query: "situations.watch",
+      searchMode: "situation",
+      filters,
+      ...(params.startAt ? { startAt: params.startAt } : {}),
+      delivery,
+    }, options)
+  }
+
   async mcpInfo(options?: RequestOptions) {
     return this.request("/mcp", {}, undefined, options)
   }
@@ -2815,4 +3044,31 @@ export type {
   DilutionReverseSplit,
   DilutionShareFloatHistory,
   DilutionCoverage,
+  MarketCapBucket,
+  Situation,
+  SituationDetail,
+  SituationEvent,
+  SituationEventList,
+  SituationFeedItem,
+  SituationFeedItemList,
+  SituationCalendarDateType,
+  SituationCalendarEntry,
+  SituationCalendarEntryList,
+  SituationStats,
+  SituationPerformance,
+  SituationStatus,
+  SituationSubtype,
+  SituationSummary,
+  SituationType,
+  SituationUnderwritingPack,
+  SituationWeeklyIssue,
+  SituationWeeklyIssueList,
+  SituationList,
+  SituationStripped,
+  SituationStrippedList,
+  SituationsByFormQuery,
+  SituationsCalendarQuery,
+  SituationsFeedQuery,
+  SituationsListQuery,
+  SituationsPerformanceQuery,
 } from "./generated-contracts/index.js"

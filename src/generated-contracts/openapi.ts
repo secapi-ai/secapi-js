@@ -1798,6 +1798,27 @@ const dilutionListParameters = [
   },
 ] as const
 
+// Scoped manual sync from the public API OpenAPI. This SDK repository does not
+// contain the source contract generator, so only the public SEC-derived
+// Special Situations paths are mirrored here.
+const situationsListParameters = [
+  { name: "types", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated situation_type values." },
+  { name: "subtypes", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated subtype values." },
+  { name: "statuses", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated lifecycle statuses." },
+  { name: "tickers", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated tickers." },
+  { name: "sectors", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated sectors." },
+  { name: "market_cap", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated market-cap buckets (nano|micro|small|mid|large|mega)." },
+  { name: "country", in: "query", required: false, schema: { type: "string" }, description: "ISO 3166-1 alpha-2 country filter." },
+  { name: "announced_from", in: "query", required: false, schema: { type: "string" }, description: "Lower bound (ISO date) on announced date." },
+  { name: "announced_to", in: "query", required: false, schema: { type: "string" }, description: "Upper bound (ISO date) on announced date." },
+  { name: "updated_from", in: "query", required: false, schema: { type: "string" }, description: "Lower bound (ISO datetime) on last update." },
+  { name: "forms", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated EDGAR form types." },
+  { name: "enrich", in: "query", required: false, schema: { type: "string", enum: ["true", "false"], default: "true" } },
+  { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 9007199254740991, default: 0 } },
+  { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+  { name: "response_mode", in: "query", required: false, schema: { type: "string", enum: ["compact", "standard", "verbose", "agent"] } },
+] as const
+
 const statementPeriodQueryParameter = {
   name: "period",
   in: "query",
@@ -4302,6 +4323,163 @@ export const openApiDocument = {
     },
     "/mcp": {
       post: { summary: "Hosted MCP transport endpoint" },
+    },
+    // ----- Public SEC-derived Special Situations -----
+    "/v1/situations": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "List durable SEC-derived special situations with lifecycle, terms, and market context",
+        parameters: situationsListParameters,
+        ...jsonResponseOneOf(["SituationList", "SituationStrippedList"]),
+      },
+    },
+    "/v1/situations/issues": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "List immutable, numbered weekly Special Situations Digest issues",
+        parameters: [{ name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 24 } }],
+        ...jsonResponse("SituationWeeklyIssueList"),
+      },
+    },
+    "/v1/situations/issues/{issue}": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Retrieve one immutable weekly Special Situations Digest issue by number or slug",
+        parameters: [{ name: "issue", in: "path", required: true, schema: { type: "string" } }],
+        ...jsonResponse("SituationWeeklyIssue"),
+      },
+    },
+    "/v1/situations/feed": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Reverse-chronological feed of SEC-derived situation events",
+        parameters: [
+          { name: "types", in: "query", required: false, schema: { type: "string" } },
+          { name: "categories", in: "query", required: false, schema: { type: "string" } },
+          { name: "tickers", in: "query", required: false, schema: { type: "string" } },
+          { name: "since", in: "query", required: false, schema: { type: "string" } },
+          { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 9007199254740991, default: 0 } },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+        ],
+        ...jsonResponse("SituationFeedItemList"),
+      },
+    },
+    "/v1/situations/feed.rss": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Paid authenticated RSS projection of SEC-derived situation events",
+        parameters: [
+          { name: "types", in: "query", required: false, schema: { type: "string" } },
+          { name: "categories", in: "query", required: false, schema: { type: "string" } },
+          { name: "tickers", in: "query", required: false, schema: { type: "string" } },
+        ],
+        responses: { "200": { description: "RSS situation feed", content: { "application/rss+xml": { schema: { type: "string" } } } } },
+      },
+    },
+    "/v1/situations/calendar": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Upcoming SEC-derived situation key dates",
+        parameters: [
+          { name: "types", in: "query", required: false, schema: { type: "string" } },
+          { name: "date_types", in: "query", required: false, schema: { type: "string" } },
+          { name: "tickers", in: "query", required: false, schema: { type: "string" } },
+          { name: "days", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 365, default: 90 } },
+          { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 9007199254740991, default: 0 } },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+        ],
+        ...jsonResponse("SituationCalendarEntryList"),
+      },
+    },
+    "/v1/situations/stats": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Situation counts by type, status, sector, and market-cap bucket",
+        parameters: [{ name: "window", in: "query", required: false, schema: { type: "string" } }],
+        ...jsonResponse("SituationStats"),
+      },
+    },
+    "/v1/situations/performance": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Closed-situation outcome cohorts",
+        parameters: [
+          { name: "types", in: "query", required: false, schema: { type: "string" } },
+          { name: "window", in: "query", required: false, schema: { type: "string" } },
+          { name: "group_by", in: "query", required: false, schema: { type: "string", enum: ["type", "subtype"] } },
+        ],
+        ...jsonResponse("SituationPerformance"),
+      },
+    },
+    "/v1/situations/by-form/{form}": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "List situations opened or advanced by an EDGAR form type",
+        parameters: [
+          { name: "form", in: "path", required: true, schema: { type: "string" } },
+          { name: "subtypes", in: "query", required: false, schema: { type: "string" } },
+          { name: "statuses", in: "query", required: false, schema: { type: "string" } },
+          { name: "tickers", in: "query", required: false, schema: { type: "string" } },
+          { name: "sectors", in: "query", required: false, schema: { type: "string" } },
+          { name: "market_cap", in: "query", required: false, schema: { type: "string" } },
+          { name: "country", in: "query", required: false, schema: { type: "string" } },
+          { name: "announced_from", in: "query", required: false, schema: { type: "string" } },
+          { name: "announced_to", in: "query", required: false, schema: { type: "string" } },
+          { name: "updated_from", in: "query", required: false, schema: { type: "string" } },
+          { name: "enrich", in: "query", required: false, schema: { type: "string", enum: ["true", "false"], default: "true" } },
+          { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 9007199254740991, default: 0 } },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+          { name: "response_mode", in: "query", required: false, schema: { type: "string", enum: ["compact", "standard", "verbose", "agent"] } },
+        ],
+        ...jsonResponseOneOf(["SituationList", "SituationStrippedList"]),
+      },
+    },
+    "/v1/situations/{situation_id}/filings": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Retrieve a situation filing timeline",
+        parameters: [
+          { name: "situation_id", in: "path", required: true, schema: { type: "string" } },
+          { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 9007199254740991, default: 0 } },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+        ],
+        ...jsonResponse("SituationEventList"),
+      },
+    },
+    "/v1/situations/{situation_id}/summary": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Retrieve a compact situation summary",
+        parameters: [{ name: "situation_id", in: "path", required: true, schema: { type: "string" } }],
+        ...jsonResponse("SituationSummary"),
+      },
+    },
+    "/v1/situations/{situation_id}/underwriting-pack": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Retrieve a deterministic, source-cited underwriting pack",
+        parameters: [{ name: "situation_id", in: "path", required: true, schema: { type: "string" } }],
+        ...jsonResponse("SituationUnderwritingPack"),
+      },
+    },
+    "/v1/situations/{situation_id}/export": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Render a source-cited Markdown Copy-for-LLM brief",
+        parameters: [{ name: "situation_id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "200": { description: "Markdown situation brief", content: { "text/markdown": { schema: { type: "string" } } } } },
+      },
+    },
+    "/v1/situations/{situation_id}": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Retrieve a single situation with its filing timeline",
+        parameters: [
+          { name: "situation_id", in: "path", required: true, schema: { type: "string" } },
+          { name: "enrich", in: "query", required: false, schema: { type: "string", enum: ["true", "false"], default: "true" } },
+        ],
+        ...jsonResponseOneOf(["SituationDetail", "SituationStripped"]),
+      },
     },
     // ----- Dilution domain (OMNI-3071 stubs; handlers land in OMNI-3089) -----
     "/v1/dilution/events": {
