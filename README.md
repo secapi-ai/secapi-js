@@ -1,8 +1,8 @@
 # SEC API JavaScript SDK
 
-Query SEC filings, financial statements, ownership data, and filing sections from TypeScript or JavaScript.
+The SEC API JavaScript SDK lets ESM applications query SEC filings, financial statements, ownership data, and filing sections through `api.secapi.ai`.
 
-[Documentation](https://docs.secapi.ai) · [Get an API key](https://secapi.ai/signup) · [API status](https://status.secapi.ai)
+[Documentation](https://docs.secapi.ai) | [API reference](https://docs.secapi.ai/api-reference) | [Get an API key](https://secapi.ai/signup)
 
 ## Install
 
@@ -10,17 +10,15 @@ Query SEC filings, financial statements, ownership data, and filing sections fro
 npm install @secapi/sdk-js
 ```
 
-The package is ESM-only and includes TypeScript declarations.
+## First request
 
-## Retrieve a filing
-
-Set your API key:
+In Node.js or Bun, set an API key in your environment:
 
 ```bash
 export SECAPI_API_KEY="secapi_live_..."
 ```
 
-Then fetch Apple's latest 10-K:
+Then request the latest Apple 10-K. This works in JavaScript (`.mjs`) and TypeScript (`.ts`):
 
 ```ts
 import { SecApiClient } from "@secapi/sdk-js"
@@ -34,209 +32,39 @@ const filing = await sec.agentLatestFiling({
 console.log(filing)
 ```
 
-Save the example as `first-request.mjs` and run it with `node first-request.mjs`.
+The response is a compact filing object. Confirm the result has the expected `ticker`, `form`, and `accessionNumber` before using it downstream; the accession number identifies the SEC filing. When present, use `filingUrl` to link back to its SEC source.
 
-The compact response identifies the filing and links back to the SEC source:
+## Compatibility and configuration
 
-```json
-{
-  "object": "filing",
-  "ticker": "AAPL",
-  "form": "10-K",
-  "accessionNumber": "0000320193-25-000079",
-  "filingDate": "2025-10-31",
-  "title": "10-K - Apple Inc.",
-  "filingUrl": "https://www.sec.gov/Archives/edgar/data/320193/0000320193-25-000079.txt",
-  "requestId": "req_..."
-}
-```
+- Published as ESM only. Use `import`, not CommonJS `require()`.
+- Node.js 18 or later is supported for REST requests. Bun, Deno, and modern browsers also need a standards-compatible global `fetch`.
+- Filing streaming additionally requires a global `WebSocket`; this is available in Node.js 21+, Bun, Deno, and modern browsers.
+- In Node.js and Bun, `new SecApiClient()` reads `SECAPI_API_KEY` from `process.env` and sends it as `x-api-key`.
+- In Deno, pass `apiKey: Deno.env.get("SECAPI_API_KEY")` when constructing the client.
+- Browser applications should call the SDK through a server or proxy and must never bundle an API key.
 
-The accession number is the filing's stable SEC identifier. Keep it with any extracted text or analysis so you can trace the result to its source. Filing dates and accession numbers in this example will change when Apple files a newer 10-K.
-
-## Common requests
-
-Flat methods are the complete SDK interface. Grouped aliases such as `sec.filings.latest()` and `sec.sections.latest()` are available for editor discovery.
-
-```ts
-// Resolve a ticker, CIK, FIGI, ISIN, CUSIP, or company name.
-const company = await sec.resolveEntity({ ticker: "AAPL", view: "agent" })
-
-// Search filings and follow the returned SEC source metadata.
-const filings = await sec.searchFilings({
-  ticker: "AAPL",
-  forms: ["10-K", "10-Q"],
-  limit: 20,
-})
-
-// Retrieve Item 1A from the latest 10-K.
-const riskFactors = await sec.agentSection({
-  ticker: "AAPL",
-  form: "10-K",
-  sectionKey: "item_1a",
-})
-
-// Retrieve annual income-statement rows in the compact response shape.
-const income = await sec.agentStatement("income_statement", {
-  ticker: "AAPL",
-  period: "annual",
-  limit: 3,
-})
-
-// Inspect recent insider transactions.
-const insiders = await sec.insiders({ ticker: "AAPL", limit: 20 })
-```
-
-See the [API documentation](https://docs.secapi.ai) for endpoint coverage, parameters, response fields, and runnable tutorials.
-
-## Factor catalogs and provenance
-
-Use `response_mode: "compact"` when you are feeding an agent, LLM, notebook, or UI card and want the smallest useful payload. Compact catalog responses still include readiness/proof summaries. Add `include: ["trust"]` only when you need the full trust/provenance envelope plus full methodology/materialization/revision/source-rights objects for citations or checks.
-
-For catalog/tool-discovery calls, start narrow with `category` and `limit` before requesting `trust` metadata; the full trust envelope can be larger than a simple picker payload.
-
-```ts
-const factors = await sec.factorCatalog({
-  category: "style",
-  limit: 25,
-  response_mode: "compact",
-})
-```
-
-## Pagination
-
-Use the built-in async iterators for cursor-based endpoints:
-
-```ts
-for await (const filing of sec.paginateFilings({
-  ticker: "AAPL",
-  form: "8-K",
-  limit: 100,
-})) {
-  console.log(filing)
-}
-```
-
-The SDK also provides `paginateEntities()`, `paginateSections()`, and a generic `paginate()` helper.
-
-## Errors
-
-API failures throw `SecApiError` with a status, stable error code, request ID, and recovery guidance when available:
-
-```ts
-import { SecApiClient, SecApiError } from "@secapi/sdk-js"
-
-const sec = new SecApiClient()
-
-try {
-  await sec.latestFiling({ ticker: "NOT-A-TICKER", form: "10-K" })
-} catch (error) {
-  if (error instanceof SecApiError) {
-    console.error({
-      status: error.status,
-      code: error.code,
-      requestId: error.requestId,
-      message: error.message,
-      hint: error.hint,
-    })
-  }
-}
-```
-
-Include `requestId` when reporting an API problem.
-
-## Authentication and configuration
-
-`new SecApiClient()` reads `SECAPI_API_KEY` and sends it as the `x-api-key` header. You can pass configuration explicitly when needed:
+To configure a Node.js or Bun client explicitly, including a custom API origin:
 
 ```ts
 const sec = new SecApiClient({
   apiKey: process.env.SECAPI_API_KEY,
-  apiVersion: "2026-03-19",
   baseUrl: "https://api.secapi.ai",
 })
 ```
 
-The SDK also recognizes these environment variables:
-
-| Variable | Purpose |
-| --- | --- |
-| `SECAPI_API_KEY` | API key for server-side and local development |
-| `SECAPI_BASE_URL` | Optional API base URL override |
-| `SECAPI_API_BASE_URL` | Alias for `SECAPI_BASE_URL` |
-| `SECAPI_BEARER_TOKEN` | WorkOS bearer token for signed-in account endpoints |
-
-For normal data requests, use an API key. Dashboard and account-management methods require a WorkOS bearer token.
-
-The client sends SEC API version `2026-03-19` by default. Pinning the version makes response-contract changes explicit rather than dependent on the request date.
-
-## Retries
-
-The SDK retries transient failures for safe HTTP methods with exponential backoff and jitter. By default it retries network errors and HTTP `408`, `429`, `502`, `503`, and `504` responses, up to three retries within a 30-second budget. It honors `Retry-After` on rate limits and opens a circuit breaker after five consecutive retryable failures.
-
-Mutating requests and MCP tool calls use `POST` and are not retried automatically. Opt in only when the operation is safe to repeat:
+In Deno:
 
 ```ts
-await sec.callMcpTool(
-  "entities.resolve",
-  { ticker: "AAPL" },
-  { retry: { enabled: true, idempotencyKey: "resolve-aapl" } },
-)
-```
-
-Disable the built-in retry layer if your application already provides one:
-
-```ts
-const sec = new SecApiClient({ retry: false })
-```
-
-Retry telemetry records SDK retry attempts without sending response payloads. Set `telemetry: false` on the client or a request to disable it.
-
-## Filing streams
-
-After creating a WebSocket stream subscription, pass its ID to the SDK. The client mints a short-lived connection ticket so the API key is not placed in the WebSocket URL:
-
-```ts
-const stream = sec.streamFilings({
-  streamId: "stream_...",
-  forms: ["8-K"],
-  tickers: ["AAPL"],
-  onFiling: (event) => console.log(event.filing),
-  onError: (error) => console.error(error),
+const sec = new SecApiClient({
+  apiKey: Deno.env.get("SECAPI_API_KEY"),
 })
 ```
 
-Streaming uses the runtime's global `WebSocket` implementation. It works without a polyfill in modern browsers, Bun, Deno, and Node.js 21 or newer. REST methods require a standards-compatible `fetch`, available in Node.js 18 or newer and the other runtimes above.
+See the [API reference](https://docs.secapi.ai/api-reference) for endpoints, parameters, response fields, and authentication details.
 
-## Run the repository example
+## Migration and support
 
-The checked-in example resolves Apple, retrieves its latest 10-K, and extracts Item 1A:
-
-```bash
-git clone https://github.com/secapi-ai/secapi-js.git
-cd secapi-js
-bun install
-export SECAPI_API_KEY="secapi_live_..."
-bun run examples/agent_workflow.ts
-```
-
-## Contributing
-
-```bash
-bun install
-bun run typecheck
-bun test
-bun run build
-```
-
-Please open an issue before changing generated API contract code by hand.
-
-## Support and links
-
-- [Documentation](https://docs.secapi.ai)
-- [Get an API key](https://secapi.ai/signup)
-- [Pricing](https://secapi.ai/pricing)
-- [API status](https://status.secapi.ai)
-- [Report an SDK issue](https://github.com/secapi-ai/secapi-js/issues)
+`SecApiClient` is the current client name. Existing integrations using `OmniDatastreamClient` can continue to run because it remains an alias for `SecApiClient`; migrate imports when you next update application code. For help, review the [documentation](https://docs.secapi.ai), check [API status](https://status.secapi.ai), or [open an SDK issue](https://github.com/secapi-ai/secapi-js/issues) with the request ID from the API response or `SecApiError`.
 
 ## License
 
