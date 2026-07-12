@@ -2,17 +2,32 @@ import { SecApiClient } from "../src/index.js"
 
 const client = new SecApiClient()
 
-const entity = await client.resolveEntity({ ticker: "AAPL" }) as Record<string, any>
-const filing = await client.latestFiling({ ticker: "AAPL", form: "10-K" }) as Record<string, any>
-const accessionNumber = filing.accessionNumber ?? filing.accession_number
+type ApiObject = Record<string, unknown>
+
+function asApiObject(value: unknown, label: string): ApiObject {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value as ApiObject
+  throw new Error(`${label} response was not an object`)
+}
+
+function stringField(record: ApiObject, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === "string") return value
+  }
+  return undefined
+}
+
+const entity = asApiObject(await client.resolveEntity({ ticker: "AAPL" }), "entity")
+const filing = asApiObject(await client.latestFiling({ ticker: "AAPL", form: "10-K" }), "latest filing")
+const accessionNumber = stringField(filing, "accessionNumber", "accession_number")
 if (!accessionNumber) {
   throw new Error("latest filing response did not include an accession number")
 }
-const section = await client.filingSectionByAccession(accessionNumber, {
+const section = asApiObject(await client.filingSectionByAccession(accessionNumber, {
   ticker: "AAPL",
   sectionKey: "item_1a",
   mode: "compact",
-}) as Record<string, any>
+}), "filing section")
 
 console.log(JSON.stringify({
   object: "secapi_sdk_agent_workflow",
@@ -24,21 +39,21 @@ console.log(JSON.stringify({
     mode: "compact",
   },
   entity: {
-    name: entity.name,
-    ticker: entity.ticker,
-    cik: entity.cik,
+    name: stringField(entity, "name"),
+    ticker: stringField(entity, "ticker"),
+    cik: stringField(entity, "cik"),
   },
   filing: {
-    id: filing.id,
+    id: stringField(filing, "id"),
     accessionNumber,
-    form: filing.form,
-    filingDate: filing.filingDate,
+    form: stringField(filing, "form"),
+    filingDate: stringField(filing, "filingDate", "filing_date"),
   },
   section: {
-    title: section.title,
-    key: section.key ?? section.section_key,
+    title: stringField(section, "title"),
+    key: stringField(section, "key", "section_key"),
     mode: "compact",
-    accessionNumber: section.accessionNumber ?? section.accession_number ?? accessionNumber,
-    contentLength: section.contentMd?.length ?? section.snippet?.length ?? 0,
+    accessionNumber: stringField(section, "accessionNumber", "accession_number") ?? accessionNumber,
+    contentLength: stringField(section, "contentMd", "snippet")?.length ?? 0,
   },
 }, null, 2))

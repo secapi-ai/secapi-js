@@ -262,21 +262,6 @@ export const corporateActionSchema = z.object({
   ...investorMetadataShape,
 })
 
-export const marketEstimateSnapshotSchema = z.object({
-  object: z.literal("market_estimate_snapshot"),
-  id: z.string(),
-  symbol: symbolSchema,
-  fiscalPeriod: z.string(),
-  fiscalYear: z.number().int(),
-  metric: z.string(),
-  value: z.number().nullable(),
-  actual: z.number().nullable().optional(),
-  surprisePercent: z.number().nullable().optional(),
-  analystCount: z.number().int().nonnegative().nullable().optional(),
-  asOf: z.string(),
-  ...investorMetadataShape,
-})
-
 export const newsEntityMentionSchema = z.object({
   symbol: symbolSchema.nullable().optional(),
   entityId: z.string().nullable().optional(),
@@ -1017,6 +1002,15 @@ export const portfolioAttributionRequestSchema = z.object({
   category: z.string().min(2).max(32).optional(),
   keys: z.array(z.string()).default([]),
   holdings: z.array(portfolioHoldingInputSchema).min(1).max(250),
+  mode: z.enum(["factor", "brinson"]).default("factor"),
+  benchmark: z.enum(["SPY", "ACWX", "QQQ", "IWM", "SIXTY_FORTY"]).optional(),
+  benchmarkSectors: z.array(z.object({
+    sector: z.string().min(1).max(64),
+    portfolioWeight: z.number(),
+    benchmarkWeight: z.number(),
+    portfolioReturn: z.number(),
+    benchmarkReturn: z.number(),
+  })).max(24).optional(),
 })
 
 export const portfolioHedgeInstrumentTypeSchema = z.enum(["equity", "etf", "future", "option", "cash"])
@@ -1097,6 +1091,15 @@ export const portfolioStressTestRequestSchema = z.object({
   category: z.string().min(2).max(32).optional(),
   keys: z.array(z.string()).default([]),
   scenarioKey: z.enum(["us_recession", "higher_for_longer", "china_growth_scare"]).optional(),
+  namedScenarioKey: z.enum([
+    "gfc_2008",
+    "covid_2020",
+    "rate_shock_2022",
+    "taper_tantrum_2013",
+    "oil_shock_2014",
+    "oil_shock_2022",
+  ]).optional(),
+  benchmark: z.enum(["SPY", "ACWX", "QQQ", "IWM", "SIXTY_FORTY"]).optional(),
   customScenario: z.object({
     label: z.string().min(3).max(120),
     factorShocks: z.record(z.string().min(1).max(64), z.number().min(-1).max(1)).default({}),
@@ -1109,6 +1112,27 @@ export const portfolioStressTestRequestSchema = z.object({
     path: ["macroShocks"],
   }).optional(),
   holdings: z.array(portfolioHoldingInputSchema).min(1).max(250),
+})
+
+export const portfolioBenchmarkKeySchema = z.enum(["SPY", "ACWX", "QQQ", "IWM", "SIXTY_FORTY"])
+
+export const portfolioRiskRequestSchema = z.object({
+  country: z.string().min(2).max(12).default("US"),
+  lookback: z.string().min(2).max(12).optional(),
+  category: z.string().min(2).max(32).optional(),
+  keys: z.array(z.string()).default([]),
+  holdings: z.array(portfolioHoldingInputSchema).min(1).max(250),
+  benchmark: portfolioBenchmarkKeySchema.optional(),
+  benchmarkLabel: z.string().min(1).max(160).optional(),
+  benchmarkHoldings: z.array(portfolioHoldingInputSchema).min(1).max(250).optional(),
+})
+
+export const brinsonSectorInputSchema = z.object({
+  sector: z.string().min(1).max(64),
+  portfolioWeight: z.number(),
+  benchmarkWeight: z.number(),
+  portfolioReturn: z.number(),
+  benchmarkReturn: z.number(),
 })
 
 export const modelFactorAnalysisModelInputSchema = z.object({
@@ -1195,7 +1219,6 @@ export const companyIntelligenceBundleSchema = z.object({
   entityId: z.string().nullable().optional(),
   snapshot: marketSnapshotSchema.nullable().optional(),
   reference: marketReferenceSchema.optional(),
-  estimates: z.array(marketEstimateSnapshotSchema).default([]),
   latestNews: z.array(newsStorySchema).default([]),
   macroRegimes: z.array(macroRegimeSchema).default([]),
   factorExposures: z.array(factorExposureSchema).default([]),
@@ -1212,7 +1235,6 @@ export const earningsPreviewBundleSchema = z.object({
   asOf: z.string(),
   symbol: symbolSchema,
   upcomingRelease: macroReleaseSchema.nullable().optional(),
-  estimates: z.array(marketEstimateSnapshotSchema).default([]),
   keyRisks: z.array(filingRiskSchema).default([]),
   keyDrivers: z.array(attributionContributionSchema).default([]),
   summaryMd: z.string(),
@@ -2071,7 +2093,6 @@ export type MarketSnapshot = z.infer<typeof marketSnapshotSchema>
 export type MarketReference = z.infer<typeof marketReferenceSchema>
 export type MarketBar = z.infer<typeof marketBarSchema>
 export type CorporateAction = z.infer<typeof corporateActionSchema>
-export type MarketEstimateSnapshot = z.infer<typeof marketEstimateSnapshotSchema>
 export type NewsStory = z.infer<typeof newsStorySchema>
 export type MacroObservation = z.infer<typeof macroObservationSchema>
 export type MacroRelease = z.infer<typeof macroReleaseSchema>

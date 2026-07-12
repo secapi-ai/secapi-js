@@ -201,14 +201,14 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     title: "Build an earnings-preview context pack",
     category: "Earnings prep",
     oneLiner:
-      "Compile estimates, recent fundamentals, and the latest MD&A excerpt before an earnings print.",
+      "Compile recent fundamentals, management guidance, and the latest MD&A excerpt before an earnings print.",
     prompt:
-      "For AAPL ahead of next earnings, pull the consensus estimates, the trailing four quarters of income statement, and the most recent MD&A section from the last 10-Q. Identify the three biggest estimate-vs-actual gaps from the prior quarter and surface MD&A passages that explain them. Output a one-page brief with bullets for setup, key debate, and watch-points.",
+      "For AAPL ahead of next earnings, pull the trailing four quarters of income statement, the most recent MD&A section from the last 10-Q, and recent earnings-related 8-K disclosures. Identify the largest sequential changes in revenue, margins, and cash generation, then surface MD&A passages and company guidance that explain them. Output a one-page brief with bullets for setup, key debate, and watch-points.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve to best-match CIK", exampleArgs: { ticker: "AAPL" } },
-      { tool: "market.estimates", purpose: "Analyst consensus estimates", exampleArgs: { ticker: "AAPL", limit: 10 } },
       { tool: "companies.income_statements", purpose: "Trailing four quarters", exampleArgs: { ticker: "AAPL", period: "quarterly", limit: 4 } },
       { tool: "sections.get", purpose: "Latest MD&A from 10-Q", exampleArgs: { ticker: "AAPL", form: "10-Q", sectionKey: "item_2" } },
+      { tool: "filings.search", purpose: "Recent earnings-related 8-K disclosures", exampleArgs: { ticker: "AAPL", form: "8-K", limit: 8 } },
     ],
     expectedOutput: "1-page earnings brief with setup, debate, watch-points.",
     difficulty: "starter",
@@ -728,12 +728,11 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     title: "Build earnings-results announcement materials",
     category: "Earnings comms",
     oneLiner:
-      "Pull estimates, results, and MD&A for an earnings press release.",
+      "Pull results, trend context, and MD&A for an earnings press release.",
     prompt:
-      "For an upcoming earnings announcement (e.g., AAPL), pull consensus estimates, the most recent 4 quarters of income statement, and the latest 8-K Item 2.02 (Results of Operations and Financial Condition) section. Output a press-release outline with the headline beat/miss framing, three supporting bullets, and a draft management quote pulled from the 8-K narrative.",
+      "For an upcoming earnings announcement (e.g., AAPL), pull the most recent four quarters of income statement and the latest 8-K Item 2.02 (Results of Operations and Financial Condition) section. Output a press-release outline grounded in the reported trend, three supporting bullets, and a draft management quote pulled from the 8-K narrative.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve issuer", exampleArgs: { ticker: "AAPL" } },
-      { tool: "market.estimates", purpose: "Consensus estimates", exampleArgs: { ticker: "AAPL", limit: 4 } },
       { tool: "companies.income_statements", purpose: "Recent quarterly income", exampleArgs: { ticker: "AAPL", period: "quarterly", limit: 4 } },
       { tool: "sections.get", purpose: "Item 2.02 results-of-operations text", exampleArgs: { ticker: "AAPL", form: "8-K", sectionKey: "item_2_02" } },
     ],

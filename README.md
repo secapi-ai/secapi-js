@@ -10,9 +10,9 @@ Query SEC filings, financial statements, ownership data, and filing sections fro
 npm install @secapi/sdk-js
 ```
 
-Requires Node.js 18 or newer. The package is ESM-only and includes TypeScript declarations.
+The package is ESM-only and includes TypeScript declarations.
 
-## First request
+## Retrieve a filing
 
 Set your API key:
 
@@ -20,7 +20,7 @@ Set your API key:
 export SECAPI_API_KEY="secapi_live_..."
 ```
 
-Create a client and fetch Apple's latest 10-K:
+Then fetch Apple's latest 10-K:
 
 ```ts
 import { SecApiClient } from "@secapi/sdk-js"
@@ -34,7 +34,7 @@ const filing = await sec.agentLatestFiling({
 console.log(filing)
 ```
 
-Save this as `first-request.mjs`, then run `node first-request.mjs`. Need a key? [Create one](https://secapi.ai/signup).
+Save the example as `first-request.mjs` and run it with `node first-request.mjs`.
 
 The compact response identifies the filing and links back to the SEC source:
 
@@ -87,6 +87,20 @@ const insiders = await sec.insiders({ ticker: "AAPL", limit: 20 })
 ```
 
 See the [API documentation](https://docs.secapi.ai) for endpoint coverage, parameters, response fields, and runnable tutorials.
+
+## Factor catalogs and provenance
+
+Use `response_mode: "compact"` when you are feeding an agent, LLM, notebook, or UI card and want the smallest useful payload. Compact catalog responses still include readiness/proof summaries. Add `include: ["trust"]` only when you need the full trust/provenance envelope plus full methodology/materialization/revision/source-rights objects for citations or checks.
+
+For catalog/tool-discovery calls, start narrow with `category` and `limit` before requesting `trust` metadata; the full trust envelope can be larger than a simple picker payload.
+
+```ts
+const factors = await sec.factorCatalog({
+  category: "style",
+  limit: 25,
+  response_mode: "compact",
+})
+```
 
 ## Pagination
 

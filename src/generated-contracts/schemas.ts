@@ -973,6 +973,18 @@ export const institutionalHolderSchema = z.object({
   investmentDiscretion: z.string().nullable(),
   weightBps: z.number().nullable(),
   holderRank: z.number(),
+  // Prior-cycle share delta computed at index materialization time by joining
+  // the manager's previous 13F filing for the same position. Optional so
+  // responses cached before the columns shipped stay valid.
+  priorShares: z.number().nullable().optional(),
+  priorReportDate: z.string().nullable().optional(),
+  sharesChangePct: z.number().nullable().optional(),
+})
+
+export const institutionalHolderTotalsSchema = z.object({
+  holders: z.number(),
+  valueUsdThousands: z.number().nullable(),
+  shares: z.number().nullable(),
 })
 
 export const institutionalHolderListSchema = z.object({
@@ -986,6 +998,10 @@ export const institutionalHolderListSchema = z.object({
   reportDate: z.string().nullable(),
   filingDate: z.string().nullable(),
   formsScanned: z.number(),
+  // Issuer-wide aggregates for the selected cohort (all filers, not just the
+  // returned page). Present on materialized-index reads; absent on legacy
+  // cached responses and scan-fallback reads.
+  totals: institutionalHolderTotalsSchema.optional(),
   holders: z.array(institutionalHolderSchema),
   provenance: provenanceSchema,
   freshness: freshnessMetadataSchema.optional(),
@@ -1178,12 +1194,31 @@ export const enforcementActionSchema = z.object({
   id: z.string(),
   createdAt: z.string(),
   livemode: z.boolean(),
-  sourceType: z.enum(["litigation_release", "administrative_proceeding"]),
+  sourceType: z.enum(["litigation_release", "administrative_proceeding", "aaer"]),
   publishedAt: z.string(),
   releaseNumber: z.string().nullable(),
   title: z.string(),
   excerpt: z.string(),
   summaryMd: z.string(),
+  respondents: z.array(z.object({
+    name: z.string(),
+    entityId: z.string().nullable(),
+    ticker: z.string().nullable(),
+    cik: z.string().nullable(),
+  })),
+  violationType: z.enum([
+    "fraud",
+    "insider_trading",
+    "reporting_violation",
+    "market_manipulation",
+    "registration_violation",
+    "investment_adviser",
+    "broker_dealer",
+    "municipal_securities",
+    "other",
+  ]).nullable(),
+  penaltyAmount: z.number().nullable(),
+  relatedReleaseNumber: z.string().nullable(),
   documentUrl: z.string().url(),
   htmlUrl: z.string().url().nullable(),
   sourceSurface: z.literal("sec_enforcement"),
@@ -1344,26 +1379,6 @@ export const marketCalendarDaySchema = z.object({
   statusNote: z.string().nullable(),
   provenance: provenanceSchema,
 })
-
-export const marketEstimateRecordSchema = z.object({
-  ticker: z.string().nullable().optional(),
-  date: z.string().nullable().optional(),
-  rating: z.string().nullable().optional(),
-  price_target: z.number().nullable().optional(),
-  price_target_average: z.number().nullable().optional(),
-  price_target_high: z.number().nullable().optional(),
-  price_target_low: z.number().nullable().optional(),
-}).passthrough()
-
-export const marketEstimatesSchema = z.object({
-  object: z.literal("market_estimates"),
-  requestId: z.string(),
-  traceparent: z.string().optional(),
-  status: z.string().optional(),
-  next_url: z.string().nullable().optional(),
-  request_id: z.string().optional(),
-  results: z.array(marketEstimateRecordSchema).optional(),
-}).passthrough()
 
 export const indexSchema = z.object({
   object: z.literal("index"),
