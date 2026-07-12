@@ -992,6 +992,48 @@ const responseExampleBySchema: Record<string, unknown> = {
   PortfolioAnalysis: examplePortfolioAnalysis,
   PortfolioAttribution: examplePortfolioAttribution,
   PortfolioHedge: examplePortfolioHedge,
+  PortfolioRisk: {
+    object: "portfolio_risk",
+    asOf: exampleAsOf,
+    lookback: "6m",
+    benchmarkLabel: "S&P 500 (SPY proxy)",
+    trackingError: 0.0412,
+    totalRisk: 0.1783,
+    exAnteBeta: 1.06,
+    factorRiskShare: 0.71,
+    specificRiskShare: 0.29,
+    factorGroups: [
+      { object: "portfolio_factor_group_risk", group: "style", label: "Style", activeExposure: 0.18, ctevShare: 0.42, ctev: 0.0173, shorterHistory: false },
+      { object: "portfolio_factor_group_risk", group: "sector", label: "Sector", activeExposure: -0.07, ctevShare: 0.29, ctev: 0.012, shorterHistory: false },
+      { object: "portfolio_factor_group_risk", group: "macro", label: "Macro", activeExposure: 0.03, ctevShare: 0, ctev: 0, shorterHistory: true },
+    ],
+    factorExposures: [
+      { object: "portfolio_factor_exposure_risk", factorKey: "MOMENTUM", factorName: "Momentum", group: "style", portfolioBeta: 0.22, benchmarkBeta: 0.05, activeBeta: 0.17, ctevShare: 0.31, ctev: 0.0128, shorterHistory: false },
+      { object: "portfolio_factor_exposure_risk", factorKey: "VALUE", factorName: "Value", group: "style", portfolioBeta: -0.11, benchmarkBeta: 0.02, activeBeta: -0.13, ctevShare: 0.18, ctev: 0.0074, shorterHistory: false },
+    ],
+    securities: [
+      { object: "portfolio_security_risk", symbol: "NVDA", weight: 0.12, modeled: true, activeWeight: 0.09, specificVol: 0.28, ctevShare: 0.14, ctev: 0.0058, note: null },
+      { object: "portfolio_security_risk", symbol: "PRIVATECO", weight: 0.03, modeled: false, activeWeight: 0.03, specificVol: 0.35, ctevShare: 0.04, ctev: 0.0016, note: "Outside the ~4k US factor plane — beta-only / specific-risk-floor treatment." },
+    ],
+    coverage: {
+      object: "portfolio_risk_coverage",
+      modeledWeight: 0.94,
+      modeledHoldings: 18,
+      unmodeledHoldings: 1,
+      unmodeledSymbols: ["PRIVATECO"],
+      totalHoldings: 19,
+      covarianceObservations: 156,
+      covarianceEstimable: true,
+    },
+    disclosures: [
+      "Ex-ante risk uses an EWMA factor covariance (~2y half-life, weekly) over the style/sector/industry factor plane (2015→).",
+      "Model coverage: 94% of portfolio NAV is inside the ~4k US factor plane. Unmodelled names use a beta-only / specific-risk-floor treatment.",
+      "Macro-factor covariance only reaches 2022; macro figures are labelled shorter-history and excluded from the P0 covariance basis.",
+    ],
+    summaryMd: "Ex-ante tracking error is 4.12% (annualised active risk); 71% factor / 29% specific.",
+    responseMode: "compact",
+    ...exampleTrustMetadata,
+  },
   ModelFactorAnalysis: {
     object: "model_factor_analysis",
     id: "model_factor_analysis:example:2026-06-09",
@@ -1148,6 +1190,14 @@ const requestExampleBySchema: Record<string, unknown> = {
     scenarioKey: "higher_for_longer",
     holdings: exampleHoldings,
   },
+  PortfolioRiskRequest: {
+    country: "US",
+    lookback: "6m",
+    category: "style",
+    keys: ["VALUE", "MOMENTUM", "QUALITY"],
+    holdings: exampleHoldings,
+    benchmark: "SPY",
+  },
   ModelFactorAnalysisRequest: {
     model: {
       id: "growth-quality-core",
@@ -1204,6 +1254,7 @@ const launchResponseSchemasRequiringExplicitExamples = new Set([
   "PortfolioAnalysis",
   "PortfolioAttribution",
   "PortfolioHedge",
+  "PortfolioRisk",
   "PortfolioStressTest",
   "ModelPortfolioFactorView",
   "ModelFactorAnalysis",
@@ -1796,6 +1847,40 @@ const dilutionListParameters = [
     schema: { type: "integer", minimum: 0, maximum: 9007199254740991, default: 0 },
     description: "Non-negative safe-integer pagination offset.",
   },
+] as const
+
+const situationsListParameters = [
+  { name: "types", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated situation_type values." },
+  { name: "subtypes", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated subtype values." },
+  { name: "statuses", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated lifecycle statuses." },
+  { name: "tickers", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated tickers." },
+  { name: "sectors", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated sectors." },
+  { name: "market_cap", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated market-cap buckets (nano|micro|small|mid|large|mega)." },
+  { name: "country", in: "query", required: false, schema: { type: "string" }, description: "ISO 3166-1 alpha-2 country filter." },
+  { name: "announced_from", in: "query", required: false, schema: { type: "string" }, description: "Lower bound (ISO date) on announced date." },
+  { name: "announced_to", in: "query", required: false, schema: { type: "string" }, description: "Upper bound (ISO date) on announced date." },
+  { name: "updated_from", in: "query", required: false, schema: { type: "string" }, description: "Lower bound (ISO datetime) on last update." },
+  { name: "forms", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated EDGAR form types (e.g. SC 13D,SC TO-T,425). Expands each form to the situation types it opens and filters to them." },
+  { name: "enrich", in: "query", required: false, schema: { type: "string", enum: ["true", "false"], default: "true" }, description: "When false, returns a minimal stripped projection instead of the full situation. Billed identically." },
+  { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 9007199254740991, default: 0 } },
+  { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+  { name: "response_mode", in: "query", required: false, schema: { type: "string", enum: ["compact", "standard", "verbose", "agent"] } },
+] as const
+
+const situationsByFormQueryParameters = [
+  { name: "subtypes", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated subtype values." },
+  { name: "statuses", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated lifecycle statuses." },
+  { name: "tickers", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated tickers." },
+  { name: "sectors", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated sectors." },
+  { name: "market_cap", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated market-cap buckets (nano|micro|small|mid|large|mega)." },
+  { name: "country", in: "query", required: false, schema: { type: "string" }, description: "ISO 3166-1 alpha-2 country filter." },
+  { name: "announced_from", in: "query", required: false, schema: { type: "string" }, description: "Lower bound (ISO date) on announced date." },
+  { name: "announced_to", in: "query", required: false, schema: { type: "string" }, description: "Upper bound (ISO date) on announced date." },
+  { name: "updated_from", in: "query", required: false, schema: { type: "string" }, description: "Lower bound (ISO datetime) on last update." },
+  { name: "enrich", in: "query", required: false, schema: { type: "string", enum: ["true", "false"], default: "true" }, description: "When false, returns a minimal stripped projection instead of the full situation. Billed identically." },
+  { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 9007199254740991, default: 0 } },
+  { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+  { name: "response_mode", in: "query", required: false, schema: { type: "string", enum: ["compact", "standard", "verbose", "agent"] } },
 ] as const
 
 const statementPeriodQueryParameter = {
@@ -2443,6 +2528,24 @@ export const openApiDocument = {
     "/v1/monitors/{monitor_id}/delivery": {
       post: { summary: "Update or replace the monitor's delivery destination (e.g., set or change an email recipient)" },
     },
+    "/v1/monitors/compile": {
+      post: {
+        summary: "Compile a natural-language alert request into a structured monitor spec",
+        description: "Turns a plain-English trigger (e.g. \"notify me about mergers at AAPL\") into a validated structured monitor subscription spec plus a ready-to-POST create body. Read-only: it returns a spec, it does not create the monitor.",
+      },
+    },
+    "/v1/alerts/plan": {
+      get: { summary: "Retrieve the public free-tier plan descriptor (included features, alert limits, and upgrade paths)" },
+    },
+    "/v1/alerts/signup": {
+      post: { summary: "Register an email for the free alerts tier (idempotent lead capture)" },
+    },
+    "/v1/embed/feed": {
+      get: { summary: "Public embeddable reverse-chronological situations feed for third-party sites (JSON, cacheable, CORS-enabled)" },
+    },
+    "/v1/embed/widget.js": {
+      get: { summary: "Public embeddable feed widget script that renders the situations feed into a host element" },
+    },
     "/v1/delivery/unsubscribe": {
       get: {
         summary: "Render an unsubscribe confirmation page for a signed token",
@@ -2966,7 +3069,20 @@ export const openApiDocument = {
       },
     },
     "/v1/offerings": {
-      get: { summary: "Return recent S-1 and 424B prospectus records with cursor pagination and date filters" },
+      get: {
+        summary: "Return S-1 registration statements and 424B prospectuses with issuer, form, date, and cursor filters",
+        parameters: [
+          { name: "ticker", in: "query", required: false, schema: { type: "string" }, description: "Optional issuer ticker filter." },
+          { name: "cik", in: "query", required: false, schema: { type: "string" }, description: "Optional issuer CIK filter." },
+          { name: "forms", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated offering forms, such as S-1, S-1/A, 424B4, or 424B5." },
+          { name: "date_from", in: "query", required: false, schema: { type: "string", format: "date" }, description: "Inclusive filing-date lower bound." },
+          { name: "date_to", in: "query", required: false, schema: { type: "string", format: "date" }, description: "Inclusive filing-date upper bound." },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 25 }, description: "Maximum offering records to return." },
+          { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 500, default: 0 }, description: "Non-negative pagination offset." },
+          { name: "submission_file_limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50 }, description: "Maximum SEC submission files to inspect while looking for offering filings." },
+          { name: "view", in: "query", required: false, schema: { type: "string", enum: ["default", "compact", "agent"] }, description: "Use agent for a compact citation-oriented offering record. Compact currently matches the default row shape." },
+        ],
+      },
     },
     "/v1/forms/144": {
       get: {
@@ -3074,12 +3190,13 @@ export const openApiDocument = {
           { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 25 }, description: "Maximum M&A events to return." },
           { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 500, default: 0 }, description: "Non-negative pagination offset." },
           { name: "submission_file_limit", in: "query", required: false, schema: { type: "integer", minimum: 12, maximum: 50 }, description: "Maximum SEC submission files to inspect while looking for M&A events." },
+          { name: "view", in: "query", required: false, schema: { type: "string", enum: ["default", "compact", "agent"] }, description: "Response shape. Use agent for a compact cited deal record; compact currently matches the default row shape." },
         ],
       },
     },
     "/v1/events/enforcement": {
       get: {
-        summary: "Return official SEC litigation releases and administrative proceedings with explicit release-source semantics and shared trace references",
+        summary: "Search SEC litigation releases, administrative proceedings, and AAERs with source-linked respondent and category filters",
         parameters: [
           { name: "query", in: "query", required: false, schema: { type: "string" }, description: "Full-text search across enforcement title, excerpt, release number, and document URL." },
           { name: "source_type", in: "query", required: false, schema: { type: "string", enum: ["litigation_release", "administrative_proceeding", "aaer"] }, description: "SEC enforcement source family." },
@@ -3093,6 +3210,7 @@ export const openApiDocument = {
           { name: "date_to", in: "query", required: false, schema: { type: "string", format: "date" }, description: "Inclusive publication-date upper bound." },
           { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 25 }, description: "Maximum enforcement events to return." },
           { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 500, default: 0 }, description: "Non-negative pagination offset." },
+          { name: "view", in: "query", required: false, schema: { type: "string", enum: ["default", "compact", "agent"] }, description: "Response shape. Use agent for a compact cited release record; compact currently matches the default row shape." },
         ],
       },
     },
@@ -3125,11 +3243,36 @@ export const openApiDocument = {
       },
     },
     "/v1/events/officer-changes": {
-      get: { summary: "Return 8-K Item 5.02 officer and director change events with change-type classification (appointment, departure, resignation, termination)" },
+      get: {
+        summary: "Return 8-K Item 5.02 officer and director change events with the cited filing",
+        parameters: [
+          { name: "ticker", in: "query", required: false, schema: { type: "string" }, description: "Issuer ticker." },
+          { name: "cik", in: "query", required: false, schema: { type: "string" }, description: "Issuer CIK." },
+          { name: "date_from", in: "query", required: false, schema: { type: "string", format: "date" }, description: "Inclusive filing-date lower bound." },
+          { name: "date_to", in: "query", required: false, schema: { type: "string", format: "date" }, description: "Inclusive filing-date upper bound." },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 25 }, description: "Maximum officer-change events to return." },
+          { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, default: 0 }, description: "Non-negative pagination offset." },
+          { name: "submission_file_limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50 }, description: "Maximum SEC submission files to inspect while looking for officer-change events." },
+        ],
+      },
+    },
+    "/v1/events/ipo": {
+      get: {
+        summary: "Return filing-derived IPO events with the cited registration statement or prospectus",
+        parameters: [
+          { name: "ticker", in: "query", required: false, schema: { type: "string" }, description: "Issuer ticker." },
+          { name: "cik", in: "query", required: false, schema: { type: "string" }, description: "Issuer CIK." },
+          { name: "date_from", in: "query", required: false, schema: { type: "string", format: "date" }, description: "Inclusive filing-date lower bound." },
+          { name: "date_to", in: "query", required: false, schema: { type: "string", format: "date" }, description: "Inclusive filing-date upper bound." },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 25 }, description: "Maximum IPO events to return." },
+          { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, default: 0 }, description: "Non-negative pagination offset." },
+          { name: "submission_file_limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50 }, description: "Maximum SEC submission files to inspect while looking for IPO events." },
+        ],
+      },
     },
     "/v1/events/voting-results": {
       get: {
-        summary: "Return 8-K Item 5.07 voting results with structured proposals, vote counts, and approval outcomes — first-in-market parser ahead of sec-api.io's open bug",
+        summary: "Return 8-K Item 5.07 voting results with structured proposals, vote counts, and approval outcomes",
         parameters: [
           { name: "ticker", in: "query", required: false, schema: { type: "string" }, description: "Issuer ticker. Either ticker or cik is required." },
           { name: "cik", in: "query", required: false, schema: { type: "string" }, description: "Issuer CIK. Either ticker or cik is required." },
@@ -3139,6 +3282,7 @@ export const openApiDocument = {
           { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 25 }, description: "Maximum voting-results events to return." },
           { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 500, default: 0 }, description: "Non-negative pagination offset." },
           { name: "submission_file_limit", in: "query", required: false, schema: { type: "integer", minimum: 16, maximum: 50 }, description: "Maximum SEC submission files to inspect while looking for voting-results events." },
+          { name: "view", in: "query", required: false, schema: { type: "string", enum: ["default", "compact", "agent"] }, description: "Response shape. Use agent for a compact cited voting-results record; compact currently matches the default row shape." },
         ],
       },
     },
@@ -3162,9 +3306,6 @@ export const openApiDocument = {
     },
     "/v1/market/corporate-actions": {
       get: { summary: "Return rights-reviewed corporate actions used to normalize price history and event analysis" },
-    },
-    "/v1/market/universe": {
-      get: { summary: "Browse the full ticker universe with pagination, filtering by exchange, type, sector, industry, and search" },
     },
     "/v1/market/earnings-calendar": {
       get: { summary: "Return upcoming and recent earnings events with consensus estimates, actuals, and surprise data" },
@@ -3294,6 +3435,32 @@ export const openApiDocument = {
             },
           },
         },
+      },
+    },
+    "/v1/macro/overview": {
+      get: {
+        summary: "Return a one-call country macro dashboard: headline indicators with latest/previous/change/direction and next release, the current regime, upcoming releases, and the sovereign credit rating",
+        parameters: macroResponseParams([
+          { name: "country", in: "query", schema: { type: "string", default: "US" }, description: "ISO country code (e.g. US, JP, CN). Defaults to US." },
+        ]),
+        ...jsonResponse("MacroOverview"),
+      },
+    },
+    "/v1/macro/all": {
+      get: {
+        summary: "Return a bulk, filterable export of macro observations across countries and indicators, with cursor pagination and CSV or async export",
+        parameters: [
+          { name: "country", in: "query", schema: { type: "string" }, description: "ISO country code, or a comma-separated list (alias: countries). Defaults to US." },
+          { name: "indicator_type", in: "query", schema: { type: "string", enum: ["growth", "inflation", "labor", "rates", "trade", "fiscal", "housing", "sentiment", "money", "other"] }, description: "Filter by macro indicator type." },
+          { name: "indicator", in: "query", schema: { type: "string" }, description: "Filter by a specific indicator key." },
+          { name: "frequency", in: "query", schema: { type: "string", enum: ["daily", "weekly", "monthly", "quarterly", "annual"] }, description: "Filter by observation frequency." },
+          { name: "date_from", in: "query", schema: { type: "string" }, description: "Inclusive lower bound on the observation period (ISO date)." },
+          { name: "date_to", in: "query", schema: { type: "string" }, description: "Inclusive upper bound on the observation period (ISO date)." },
+          { name: "cursor", in: "query", schema: { type: "string" }, description: "Opaque pagination cursor from the previous page's nextCursor." },
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 1000, default: 250 }, description: "Maximum observations per page (default 250, max 1000)." },
+          { name: "format", in: "query", schema: { type: "string", enum: ["json", "csv"], default: "json" }, description: "Response format. csv returns an attachment; oversized exports are materialized asynchronously and returned as an export job." },
+        ],
+        ...jsonResponseOneOf(["MacroObservationList", "MacroExportJob"], "A page of macro observations, or — when the filtered result set is too large to inline — an async export job whose signed download URL is delivered via the export.completed webhook event."),
       },
     },
     "/v1/macro/credit-ratings": {
@@ -3676,6 +3843,14 @@ export const openApiDocument = {
         ...jsonFactorResponse("PortfolioAttribution"),
       },
     },
+    "/v1/portfolio/risk": {
+      post: {
+        summary: "Return ex-ante portfolio risk: tracking error, CTEV by factor group and by security, ex-ante beta, and the factor-vs-idiosyncratic split, labelled with model coverage",
+        parameters: factorResponseParams(),
+        ...jsonRequestBody("PortfolioRiskRequest"),
+        ...jsonFactorResponse("PortfolioRisk"),
+      },
+    },
     "/v1/model-portfolios/{portfolioId}/factor-view": {
       get: {
         summary: "Return a model-portfolio factor view with aggregate analysis and per-position exposures for drill-down workflows",
@@ -3802,6 +3977,13 @@ export const openApiDocument = {
         parameters: macroResponseParams([], { responseModeDefault: "standard" }),
         ...jsonRequestBody("CountryReportRequest"),
         ...jsonResponse("CountryReport"),
+      },
+    },
+    "/v1/intelligence/macro-exposure": {
+      post: {
+        summary: "Return revenue-weighted macro sensitivities for a portfolio: geographic revenue segments crossed with the country macro plane, with per-holding contributions and a coverage percentage",
+        ...jsonRequestBody("PortfolioMacroExposureRequest"),
+        ...jsonResponse("PortfolioMacroExposure"),
       },
     },
     "/v1/intelligence/footnotes/query": {
@@ -4113,6 +4295,19 @@ export const openApiDocument = {
         ...jsonResponse("CompanySegments"),
       },
     },
+    "/v1/companies/macro-exposure": {
+      get: {
+        summary: "Return revenue-weighted macro sensitivities for a single company: geographic revenue segments crossed with the country macro plane, with per-indicator beta, direction, confidence, and a coverage percentage that degrades gracefully when segments are unavailable",
+        parameters: [
+          { name: "ticker", in: "query", required: false, schema: { type: "string" }, description: "Issuer ticker (alias: symbol). Either ticker or cik is required." },
+          { name: "cik", in: "query", required: false, schema: { type: "string" }, description: "Issuer CIK. Either ticker or cik is required." },
+          { name: "country", in: "query", required: false, schema: { type: "string", default: "US" }, description: "Domestic macro-plane country used for unmapped revenue. Defaults to US." },
+          { name: "lookback", in: "query", required: false, schema: { type: "string" }, description: "Optional lookback window label echoed on the response." },
+          { name: "period", in: "query", required: false, schema: { type: "string", enum: ["annual", "quarterly"], default: "annual" }, description: "Reporting period for the geographic revenue segments. Defaults to annual." },
+        ],
+        ...jsonResponse("CompanyMacroExposure"),
+      },
+    },
     "/v1/companies/overview": {
       get: {
         summary: "Return a first-party SEC company overview — a due-diligence briefing combining identity/classification (name, CIK, tickers, sector/industry from SIC, state of incorporation, exchange, former names) with the latest material filing and a sector-aware financial snapshot derived from multi-year annual SEC XBRL facts. A companyType discriminator (operating / financial_institution / pre_revenue) drives which metrics are valid: financial institutions null gross/operating margin and free cash flow and lean on net margin, ROE, ROA, book value, and total assets. The revenue concept is recency-selected (the candidate whose latest fiscal year is most recent wins) so deprecated tags and wrong sub-lines never win. The base overview is intentionally light; pass include=segments,footnotes,dilution,factors to attach opt-in, bounded enrichments (footnotes is returned as a reference link rather than rendered inline; factors is a quantified, time-ranged quant factor-exposure snapshot — an exposure snapshot, not a forecast). Ships beta. Requires ticker or cik.",
@@ -4125,19 +4320,61 @@ export const openApiDocument = {
       },
     },
     "/v1/owners/13f": {
-      get: { summary: "Return the latest normalized 13F ownership report for a manager CIK, with optional quarter-specific selection" },
+      get: {
+        summary: "Return the latest normalized 13F ownership report for a manager CIK, with optional quarter-specific selection",
+        parameters: [
+          { name: "cik", in: "query", required: true, schema: { type: "string" }, description: "Institutional manager CIK." },
+          { name: "reportDate", in: "query", required: false, schema: { type: "string", format: "date" }, description: "Optional quarter-end report date (YYYY-MM-DD)." },
+          { name: "filingDate", in: "query", required: false, schema: { type: "string", format: "date" }, description: "Optional SEC filing date (YYYY-MM-DD)." },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 50 }, description: "Maximum holdings to return from the selected report." },
+          { name: "view", in: "query", required: false, schema: { type: "string", enum: ["default", "agent"] }, description: "Response shape. Use agent for a compact, citation-preserving payload." },
+        ],
+      },
     },
     "/v1/owners/institutional/investor": {
-      get: { summary: "Return an investor-centric institutional ownership graph for a manager CIK, including ranked holdings and quarter-over-quarter changes" },
+      get: {
+        summary: "Return an investor-centric institutional ownership graph for a manager CIK, including ranked holdings and quarter-over-quarter changes",
+        parameters: [
+          { name: "cik", in: "query", required: true, schema: { type: "string" }, description: "Institutional manager CIK." },
+          { name: "reportDate", in: "query", required: false, schema: { type: "string", format: "date" }, description: "Optional quarter-end report date (YYYY-MM-DD)." },
+          { name: "filingDate", in: "query", required: false, schema: { type: "string", format: "date" }, description: "Optional SEC filing date (YYYY-MM-DD)." },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 50 }, description: "Maximum holdings to return." },
+        ],
+      },
     },
     "/v1/owners/institutional/extract": {
-      get: { summary: "Return a quarter-specific historical institutional ownership extract for a manager CIK over the SEC-native 13F family" },
+      get: {
+        summary: "Return a quarter-specific historical institutional ownership extract for a manager CIK over the SEC-native 13F family",
+        parameters: [
+          { name: "cik", in: "query", required: true, schema: { type: "string" }, description: "Institutional manager CIK." },
+          { name: "year", in: "query", required: true, schema: { type: "integer", minimum: 1900 }, description: "Report year." },
+          { name: "quarter", in: "query", required: true, schema: { type: "integer", enum: [1, 2, 3, 4] }, description: "Calendar quarter of the report." },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 50 }, description: "Maximum holdings to return." },
+        ],
+      },
     },
     "/v1/owners/institutional/ticker": {
-      get: { summary: "Return a ticker-centric institutional holder graph for the latest materialized 13F cohort, ranked by disclosed position value" },
+      get: {
+        summary: "Return a ticker-centric institutional holder graph for the latest materialized 13F cohort, ranked by disclosed position value",
+        parameters: [
+          { name: "ticker", in: "query", required: false, schema: { type: "string" }, description: "Issuer ticker. Provide ticker or CIK." },
+          { name: "cik", in: "query", required: false, schema: { type: "string" }, description: "Issuer CIK. Provide ticker or CIK." },
+          { name: "reportDate", in: "query", required: false, schema: { type: "string", format: "date" }, description: "Optional quarter-end report date (YYYY-MM-DD)." },
+          { name: "filingDate", in: "query", required: false, schema: { type: "string", format: "date" }, description: "Optional SEC filing date (YYYY-MM-DD)." },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 25 }, description: "Maximum institutional holders to return." },
+          { name: "view", in: "query", required: false, schema: { type: "string", enum: ["default", "agent"] }, description: "Response shape. Use agent for a compact holder ranking with filing identifiers." },
+        ],
+      },
     },
     "/v1/owners/13f/filings": {
-      get: { summary: "List recent 13F filings, including quarter-end report dates, for a manager CIK" },
+      get: {
+        summary: "List recent 13F filings, including quarter-end report dates, for a manager CIK",
+        parameters: [
+          { name: "cik", in: "query", required: true, schema: { type: "string" }, description: "Institutional manager CIK." },
+          { name: "since", in: "query", required: false, schema: { type: "string", format: "date-time" }, description: "Optional inclusive filing-acceptance timestamp for incremental polling." },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 8 }, description: "Maximum filing records to return." },
+        ],
+      },
     },
     "/v1/owners/13d-13g": {
       get: {
@@ -4156,7 +4393,24 @@ export const openApiDocument = {
       },
     },
     "/v1/owners/13f/compare": {
-      post: { summary: "Compare the latest two 13F ownership reports for a manager CIK" },
+      post: {
+        summary: "Compare the latest two parsable 13F ownership reports for a manager CIK",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["cik"],
+                properties: {
+                  cik: { type: "string", description: "Manager CIK for the two-report comparison." },
+                  limit: { type: "integer", minimum: 1, maximum: 50, default: 50, description: "Maximum position rows to include in each parsed report." },
+                },
+              },
+            },
+          },
+        },
+      },
     },
     "/v1/insiders": {
       get: {
@@ -4266,17 +4520,6 @@ export const openApiDocument = {
         summary: "Search for stock tickers by company name or keyword",
         parameters: [
           { name: "q", in: "query", required: true, schema: { type: "string" } },
-          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 50 } },
-        ],
-      },
-    },
-    "/v1/market/estimates": {
-      get: {
-        summary: "Return analyst consensus ratings and price-target estimates for a ticker via SEC API market data",
-        parameters: [
-          { name: "ticker", in: "query", required: true, schema: { type: "string" } },
-          { name: "date_from", in: "query", schema: { type: "string", format: "date" } },
-          { name: "date_to", in: "query", schema: { type: "string", format: "date" } },
           { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 50 } },
         ],
       },
@@ -4406,6 +4649,254 @@ export const openApiDocument = {
           { name: "ticker", in: "query", schema: { type: "string" }, description: "Optional ticker scope. When present, counts and freshness are restricted to rows for that issuer." },
         ],
         ...jsonResponse("DilutionCoverage"),
+      },
+    },
+    // ----- Filings-intelligence plane (OMNI-5123, WS11) -----
+    // NOTE: filing_event responses use the PUBLIC schema (sentiment omitted).
+    "/v1/filings/events": {
+      get: {
+        summary: "Persisted AI-tagged 8-K/6-K filing feed (StockInsights-style ai_insights). Cursor-paginated, replayable, one durable row per tagged filing.",
+        parameters: [
+          { name: "forms", in: "query", schema: { type: "string" }, description: "Comma-separated form types (e.g. 8-K,6-K)." },
+          { name: "categories", in: "query", schema: { type: "string" }, description: "Comma-separated filing_event_category values." },
+          { name: "tickers", in: "query", schema: { type: "string" }, description: "Comma-separated ticker symbols." },
+          { name: "date_from", in: "query", schema: { type: "string" }, description: "Inclusive lower bound on filedAt (ISO date)." },
+          { name: "date_to", in: "query", schema: { type: "string" }, description: "Inclusive upper bound on filedAt (ISO date)." },
+          { name: "cursor", in: "query", schema: { type: "integer", minimum: 0 } },
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+          { name: "response_mode", in: "query", schema: { type: "string", enum: ["compact", "standard", "verbose", "agent"] } },
+        ],
+        ...jsonResponse("FilingEventList"),
+      },
+    },
+    "/v1/filings/diff": {
+      get: {
+        summary: "Filing-diff v2 report: auto prior-period pairing, per-section change badges, word-level redline hunks, and materiality scores across two filings of the same form.",
+        parameters: [
+          { name: "ticker", in: "query", required: true, schema: { type: "string" }, description: "Issuer ticker." },
+          { name: "form", in: "query", required: true, schema: { type: "string" }, description: "Form type to pair (e.g. 10-K)." },
+          { name: "from", in: "query", schema: { type: "string" }, description: "Base filing selector: accession number or ISO date. Defaults to the prior filing of `form`." },
+          { name: "to", in: "query", schema: { type: "string" }, description: "Compare filing selector: accession number or ISO date. Defaults to the latest filing of `form`." },
+          { name: "sections", in: "query", schema: { type: "string" }, description: "Comma-separated canonical section keys to restrict the diff." },
+          { name: "include_hunks", in: "query", schema: { type: "string", enum: ["true", "false"] }, description: "Include redline hunks (default true)." },
+          { name: "response_mode", in: "query", schema: { type: "string", enum: ["compact", "standard", "verbose", "agent"] } },
+        ],
+        ...jsonResponse("FilingDiffReport"),
+      },
+    },
+    "/v1/filings/transcripts": {
+      get: {
+        summary: "Persisted earnings-transcript store: speaker attribution, prepared-remarks/Q&A segmentation, and summaries extracted from EX-99 materials.",
+        parameters: [
+          { name: "tickers", in: "query", schema: { type: "string" }, description: "Comma-separated ticker symbols." },
+          { name: "cik", in: "query", schema: { type: "string" } },
+          { name: "fiscal_period", in: "query", schema: { type: "string" } },
+          { name: "date_from", in: "query", schema: { type: "string" } },
+          { name: "date_to", in: "query", schema: { type: "string" } },
+          { name: "cursor", in: "query", schema: { type: "integer", minimum: 0 } },
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+          { name: "response_mode", in: "query", schema: { type: "string", enum: ["compact", "standard", "verbose", "agent"] } },
+        ],
+        ...jsonResponse("EarningsTranscriptList"),
+      },
+    },
+    "/v1/filings/guidance": {
+      get: {
+        summary: "Structured guidance store: metric, direction, target period, and value ranges extracted from earnings materials and transcripts.",
+        parameters: [
+          { name: "tickers", in: "query", schema: { type: "string" }, description: "Comma-separated ticker symbols." },
+          { name: "cik", in: "query", schema: { type: "string" } },
+          { name: "metric", in: "query", schema: { type: "string" }, description: "Normalized metric label (e.g. revenue, eps)." },
+          { name: "direction", in: "query", schema: { type: "string", enum: ["raised", "lowered", "reaffirmed", "initiated", "withdrawn"] } },
+          { name: "fiscal_period", in: "query", schema: { type: "string" } },
+          { name: "date_from", in: "query", schema: { type: "string" } },
+          { name: "date_to", in: "query", schema: { type: "string" } },
+          { name: "cursor", in: "query", schema: { type: "integer", minimum: 0 } },
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+          { name: "response_mode", in: "query", schema: { type: "string", enum: ["compact", "standard", "verbose", "agent"] } },
+        ],
+        ...jsonResponse("FilingGuidanceList"),
+      },
+    },
+    "/v1/intelligence/coverage": {
+      get: {
+        summary: "AI coverage-report composer: single-issuer rollup over the persisted filings-intelligence stores (tagged events, guidance, transcripts, footnote newness).",
+        parameters: [
+          { name: "ticker", in: "query", schema: { type: "string" }, description: "Issuer ticker (ticker or cik required)." },
+          { name: "cik", in: "query", schema: { type: "string" }, description: "Issuer CIK (ticker or cik required)." },
+          { name: "date_from", in: "query", schema: { type: "string" } },
+          { name: "date_to", in: "query", schema: { type: "string" } },
+          { name: "response_mode", in: "query", schema: { type: "string", enum: ["compact", "standard", "verbose", "agent"] } },
+        ],
+        ...jsonResponse("FilingCoverageReport"),
+      },
+    },
+    // ----- Situations plane (OMNI-5122, WS10) -----
+    "/v1/situations": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "List durable special situations (M&A, tender offers, going-private, spin-offs, activist campaigns, restructuring, bankruptcy, …) with lifecycle status, deal terms, and market snapshot.",
+        parameters: situationsListParameters,
+        ...jsonResponseOneOf(["SituationList", "SituationStrippedList"]),
+      },
+    },
+    "/v1/situations/issues": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "List immutable, numbered weekly Special Situations Digest issues",
+        parameters: [
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 24 } },
+        ],
+        ...jsonResponse("SituationWeeklyIssueList"),
+      },
+    },
+    "/v1/situations/issues/{issue}": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Retrieve one immutable weekly Special Situations Digest issue by number or slug",
+        parameters: [{ name: "issue", in: "path", required: true, schema: { type: "string" } }],
+        ...jsonResponse("SituationWeeklyIssue"),
+      },
+    },
+    "/v1/situations/feed": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Reverse-chronological feed of situation events, each enriched with its parent situation summary",
+        parameters: [
+          { name: "types", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated situation_type values." },
+          { name: "categories", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated filing_event_category values." },
+          { name: "tickers", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated tickers." },
+          { name: "since", in: "query", required: false, schema: { type: "string" }, description: "Lower bound (ISO datetime) on event time." },
+          { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 9007199254740991, default: 0 } },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+        ],
+        ...jsonResponse("SituationFeedItemList"),
+      },
+    },
+    "/v1/situations/feed.rss": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Paid authenticated RSS feed of situation events",
+        description: "RSS XML version of the paid Special Situations event feed. This is distinct from the anonymous public embed RSS surface.",
+        parameters: [
+          { name: "types", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated situation_type values." },
+          { name: "categories", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated filing_event_category values." },
+          { name: "tickers", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated tickers." },
+          { name: "since", in: "query", required: false, schema: { type: "string" }, description: "Lower bound (ISO datetime) on event time." },
+        ],
+        responses: {
+          "200": {
+            description: "RSS XML feed of situation events",
+            content: { "application/rss+xml": { schema: { type: "string" } } },
+          },
+        },
+      },
+    },
+    "/v1/situations/calendar": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Upcoming situation key dates (record, vote, expiry, expected close) within a horizon of up to 365 days",
+        parameters: [
+          { name: "types", in: "query", required: false, schema: { type: "string" } },
+          { name: "date_types", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated: record,vote,expiry,expected_close." },
+          { name: "tickers", in: "query", required: false, schema: { type: "string" } },
+          { name: "days", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 365, default: 90 } },
+          { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 9007199254740991, default: 0 } },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+        ],
+        ...jsonResponse("SituationCalendarEntryList"),
+      },
+    },
+    "/v1/situations/stats": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Situation counts by type, status, sector, and market-cap bucket over an optional window",
+        parameters: [
+          { name: "window", in: "query", required: false, schema: { type: "string" }, description: "Optional ISO date lower bound on last update." },
+        ],
+        ...jsonResponse("SituationStats"),
+      },
+    },
+    "/v1/situations/performance": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Closed-situation outcome cohorts: completion rate, median days to close, average premium, terminated/expired counts",
+        parameters: [
+          { name: "types", in: "query", required: false, schema: { type: "string" } },
+          { name: "window", in: "query", required: false, schema: { type: "string" } },
+          { name: "group_by", in: "query", required: false, schema: { type: "string", enum: ["type", "subtype"] } },
+        ],
+        ...jsonResponse("SituationPerformance"),
+      },
+    },
+    "/v1/situations/by-form/{form}": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "List special situations opened or advanced by a given EDGAR form type (e.g. SC 13D, SC TO-T, 425, DEFM14A). The form is expanded to the situation types it triggers.",
+        parameters: [
+          { name: "form", in: "path", required: true, schema: { type: "string" }, description: "EDGAR form type, URL-encoded (e.g. SC%2013D)." },
+          ...situationsByFormQueryParameters,
+        ],
+        ...jsonResponseOneOf(["SituationList", "SituationStrippedList"]),
+      },
+    },
+    "/v1/situations/{situation_id}/filings": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Retrieve a situation's per-filing timeline as a paginated sub-resource (oldest first)",
+        parameters: [
+          { name: "situation_id", in: "path", required: true, schema: { type: "string" } },
+          { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 9007199254740991, default: 0 } },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+        ],
+        ...jsonResponse("SituationEventList"),
+      },
+    },
+    "/v1/situations/{situation_id}/summary": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Retrieve a compact situation summary: rendered markdown, deal terms, and the latest timeline event",
+        parameters: [
+          { name: "situation_id", in: "path", required: true, schema: { type: "string" } },
+        ],
+        ...jsonResponse("SituationSummary"),
+      },
+    },
+    "/v1/situations/{situation_id}/underwriting-pack": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Retrieve a deterministic, source-cited underwriting pack with canonical detail, filing timeline, and Copy-for-LLM markdown",
+        description: "Paid heavy-extract read. The pack reuses the canonical Special Situations detail and SEC filing timeline; it does not include internal-only enrichment or generated investment advice.",
+        parameters: [
+          { name: "situation_id", in: "path", required: true, schema: { type: "string" } },
+        ],
+        ...jsonResponse("SituationUnderwritingPack"),
+      },
+    },
+    "/v1/situations/{situation_id}/export": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Render a source-cited Markdown Copy-for-LLM brief for one situation",
+        parameters: [
+          { name: "situation_id", in: "path", required: true, schema: { type: "string" } },
+        ],
+        responses: {
+          "200": {
+            description: "Markdown situation brief",
+            content: { "text/markdown": { schema: { type: "string" } } },
+          },
+        },
+      },
+    },
+    "/v1/situations/{situation_id}": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Retrieve a single situation with its full per-filing timeline (oldest first)",
+        parameters: [
+          { name: "situation_id", in: "path", required: true, schema: { type: "string" } },
+          { name: "enrich", in: "query", required: false, schema: { type: "string", enum: ["true", "false"], default: "true" }, description: "When false, returns the minimal stripped projection. Billed identically." },
+        ],
+        ...jsonResponseOneOf(["SituationDetail", "SituationStripped"]),
       },
     },
   },

@@ -234,6 +234,15 @@ export const v1MonitorDestinationSchema = z.discriminatedUnion("type", [
       to: z.string().email(),
     }),
   }),
+  z.object({
+    type: z.literal("webhook"),
+    config: z.object({
+      // A Situation watch dispatches through the organization's subscribed
+      // webhook and stream targets; this acknowledgement prevents a monitor
+      // that has no declared delivery path from looking operational.
+      organizationEventFanout: z.boolean(),
+    }),
+  }),
 ])
 
 export const v1CreateMonitorBodySchema = z.preprocess(
@@ -269,11 +278,23 @@ export const v1CreateMonitorBodySchema = z.preprocess(
       name: z.string().trim().min(1),
       query: z.string().trim().min(1),
       filters: z.record(z.string(), z.unknown()).nullish(),
-      /** Only `keyword` is currently supported for monitor execution. */
-      searchMode: z.enum(["keyword"]).nullish(),
+      /**
+       * Optional cursor seed for legacy keyword and broad structured monitors.
+       * Exact situation subscriptions are server-seeded and ignore this value.
+       */
+      startAt: z.string().datetime({ offset: true }).nullish(),
+      /**
+       * Monitor execution mode. `keyword` (default) runs full-text filing
+       * search. The structured modes (`situation`, `filing_event`, `footnote`,
+       * `section_delta`, OMNI-5127) subscribe to the intelligence planes and
+       * validate `filters` against the mode's typed schema in the route
+       * handler (parseStructuredMonitorSpec). Structured modes are gated by
+       * OMNI_STRUCTURED_MONITORS_ENABLED at execution + create time.
+       */
+      searchMode: z.enum(["keyword", "situation", "filing_event", "footnote", "section_delta"]).nullish(),
       /** Legacy single-webhook path. Kept for backward compat with existing clients. */
       webhookUrl: z.string().url().nullish(),
-      /** New path: typed `{type, config}` destination. v1 ships single email destination per monitor. */
+      /** Typed `{type, config}` destination: direct email or acknowledged organization event fanout. */
       delivery: v1MonitorDestinationSchema.nullish(),
     })
     .passthrough()

@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import { SecApiClient, SecApiError, SecApiValidationError, SDK_VERSION, type RetryOptions } from "../src/index.js"
 
+type RetryTestClient = SecApiClient & {
+  createStreamTicket(): Promise<unknown>
+  request(path: string, options?: { signal?: AbortSignal }): Promise<unknown>
+}
+
+function retryTestClient(client: SecApiClient): RetryTestClient {
+  return client as RetryTestClient
+}
+
 function jsonResponse(status: number, body: unknown = { ok: true }, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
@@ -689,7 +698,7 @@ describe("SecApiClient retry behavior", () => {
       },
     })
 
-    await expect((client as any).createStreamTicket()).rejects.toBeInstanceOf(SecApiValidationError)
+    await expect(retryTestClient(client).createStreamTicket()).rejects.toBeInstanceOf(SecApiValidationError)
     expect(attempts).toBe(1)
     expect(delays).toEqual([])
   })
@@ -1144,7 +1153,7 @@ describe("SecApiClient retry behavior", () => {
     })
 
     controller.abort()
-    await expect((client as any).request("/healthz", { signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" })
+    await expect(retryTestClient(client).request("/healthz", { signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" })
     expect(attempts).toBe(1)
     expect(delays).toEqual([])
   })
@@ -1176,7 +1185,7 @@ describe("SecApiClient retry behavior", () => {
 
     try {
       for (let i = 0; i < 12; i += 1) {
-        await expect((client as any).request("/healthz", { signal: controller.signal })).resolves.toEqual({ ok: true })
+        await expect(retryTestClient(client).request("/healthz", { signal: controller.signal })).resolves.toEqual({ ok: true })
         expect(activeListeners.size).toBe(0)
       }
     } finally {

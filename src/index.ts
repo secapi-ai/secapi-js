@@ -66,8 +66,9 @@ import {
   portfolioHedgeSchema,
   modelFactorAnalysisSchema,
   responseViewSchema,
+  situationMonitorFilterSchema,
 } from "./generated-contracts/index.js"
-import type { Entity, Filing, Section } from "./generated-contracts/index.js"
+import type { Entity, Filing, Section, SituationMonitorFilter, SituationUnderwritingPack, SituationWeeklyIssue, SituationWeeklyIssueList } from "./generated-contracts/index.js"
 import type { z } from "zod"
 
 /**
@@ -79,7 +80,7 @@ export type ResponseView = z.infer<typeof responseViewSchema>
 
 const DEFAULT_BASE_URL = "https://api.secapi.ai"
 const DEFAULT_API_VERSION = "2026-03-19"
-export const SDK_VERSION = "1.1.0"
+export const SDK_VERSION = "1.2.0"
 const POSTHOG_CAPTURE_HOST = "https://us.i.posthog.com"
 
 const SAFE_RETRY_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
@@ -189,6 +190,51 @@ export type FactorApiResponseMode = "compact" | "standard" | "verbose"
 type FactorResponseControls = {
   response_mode?: FactorApiResponseMode
   include?: string | string[]
+}
+
+type SituationResponseMode = "compact" | "standard" | "verbose" | "agent"
+
+type SituationListParams = {
+  types?: string | string[]
+  subtypes?: string | string[]
+  statuses?: string | string[]
+  tickers?: string | string[]
+  forms?: string | string[]
+  sectors?: string | string[]
+  market_cap?: string | string[]
+  country?: string
+  announced_from?: string
+  announced_to?: string
+  updated_from?: string
+  enrich?: "true" | "false"
+  cursor?: string | number
+  limit?: number
+  response_mode?: SituationResponseMode
+}
+
+type SituationByFormParams = Omit<SituationListParams, "types" | "forms">
+
+type SituationFeedParams = {
+  types?: string | string[]
+  categories?: string | string[]
+  tickers?: string | string[]
+  since?: string
+  cursor?: string | number
+  limit?: number
+  response_mode?: SituationResponseMode
+}
+
+type SituationFeedRssParams = Omit<SituationFeedParams, "cursor" | "limit" | "response_mode">
+
+type SituationWatchDelivery =
+  | { email: string }
+  | { organizationWebhook: true }
+
+type SituationWatchParams = {
+  name?: string
+  filters?: SituationMonitorFilter
+  startAt?: string
+  delivery: SituationWatchDelivery
 }
 
 type FactorKeySelection = FactorResponseControls & {
@@ -948,6 +994,35 @@ export class SecApiClient {
     regimes: (...args: Parameters<SecApiClient["macroRegimes"]>) => this.macroRegimes(...args),
     creditRatings: (...args: Parameters<SecApiClient["macroCreditRatings"]>) => this.macroCreditRatings(...args),
     creditRating: (...args: Parameters<SecApiClient["macroCreditRating"]>) => this.macroCreditRating(...args),
+    overview: (...args: Parameters<SecApiClient["macroOverview"]>) => this.macroOverview(...args),
+    all: (...args: Parameters<SecApiClient["macroAll"]>) => this.macroAll(...args),
+    companyExposure: (...args: Parameters<SecApiClient["companyMacroExposure"]>) => this.companyMacroExposure(...args),
+  }
+
+  readonly situations = {
+    list: (...args: Parameters<SecApiClient["listSituations"]>) => this.listSituations(...args),
+    issues: (...args: Parameters<SecApiClient["situationsIssues"]>) => this.situationsIssues(...args),
+    issue: (...args: Parameters<SecApiClient["situationIssue"]>) => this.situationIssue(...args),
+    byForm: (...args: Parameters<SecApiClient["situationsByForm"]>) => this.situationsByForm(...args),
+    get: (...args: Parameters<SecApiClient["getSituation"]>) => this.getSituation(...args),
+    filings: (...args: Parameters<SecApiClient["situationFilings"]>) => this.situationFilings(...args),
+    summary: (...args: Parameters<SecApiClient["situationSummary"]>) => this.situationSummary(...args),
+    underwrite: (...args: Parameters<SecApiClient["underwriteSituation"]>) => this.underwriteSituation(...args),
+    export: (...args: Parameters<SecApiClient["exportSituation"]>) => this.exportSituation(...args),
+    feed: (...args: Parameters<SecApiClient["situationsFeed"]>) => this.situationsFeed(...args),
+    feedRss: (...args: Parameters<SecApiClient["situationsFeedRss"]>) => this.situationsFeedRss(...args),
+    watch: (...args: Parameters<SecApiClient["watchSituations"]>) => this.watchSituations(...args),
+    calendar: (...args: Parameters<SecApiClient["situationsCalendar"]>) => this.situationsCalendar(...args),
+    stats: (...args: Parameters<SecApiClient["situationsStats"]>) => this.situationsStats(...args),
+    performance: (...args: Parameters<SecApiClient["situationsPerformance"]>) => this.situationsPerformance(...args),
+  }
+
+  readonly filingsIntelligence = {
+    events: (...args: Parameters<SecApiClient["filingEvents"]>) => this.filingEvents(...args),
+    diff: (...args: Parameters<SecApiClient["filingDiff"]>) => this.filingDiff(...args),
+    transcripts: (...args: Parameters<SecApiClient["filingTranscripts"]>) => this.filingTranscripts(...args),
+    guidance: (...args: Parameters<SecApiClient["filingGuidance"]>) => this.filingGuidance(...args),
+    coverage: (...args: Parameters<SecApiClient["filingCoverage"]>) => this.filingCoverage(...args),
   }
 
   readonly portfolio = {
@@ -1448,9 +1523,10 @@ export class SecApiClient {
       name: string
       query: string
       filters?: Record<string, unknown>
-      searchMode?: "keyword"
+      searchMode?: "keyword" | "situation" | "filing_event" | "footnote" | "section_delta"
+      startAt?: string
       webhookUrl?: string
-      delivery?: { type: "email"; config: { to: string } }
+      delivery?: { type: "email"; config: { to: string } } | { type: "webhook"; config: { organizationEventFanout: true } }
     },
     options?: RequestOptions,
   ) {
@@ -1798,7 +1874,7 @@ export class SecApiClient {
     return this.get("/v1/statements/share-float", params)
   }
 
-  async offerings(params: RequestParams<{ ticker?: string; cik?: string; forms?: string | string[]; date_from?: string; date_to?: string; cursor?: string; limit?: number; view?: ResponseView }> = {}) {
+  async offerings(params: RequestParams<{ ticker?: string; cik?: string; forms?: string | string[]; date_from?: string; date_to?: string; submission_file_limit?: number; cursor?: string; limit?: number; view?: ResponseView }> = {}) {
     return this.get("/v1/offerings", params)
   }
 
@@ -1809,9 +1885,25 @@ export class SecApiClient {
   }
 
   async enforcementActions(
-    params: RequestParams<{ query?: string; source_type?: "litigation_release" | "administrative_proceeding" | "aaer"; date_from?: string; date_to?: string; cursor?: string; limit?: number; view?: ResponseView }> = {},
+    params: RequestParams<{ query?: string; source_type?: "litigation_release" | "administrative_proceeding" | "aaer"; violation_type?: "fraud" | "insider_trading" | "reporting_violation" | "market_manipulation" | "registration_violation" | "investment_adviser" | "broker_dealer" | "municipal_securities" | "other"; respondent?: string; ticker?: string; cik?: string; penalty_min?: number; penalty_max?: number; date_from?: string; date_to?: string; cursor?: string; limit?: number; view?: ResponseView }> = {},
   ) {
     return this.get("/v1/events/enforcement", params)
+  }
+
+  async restatementEvents(params: RequestParams<{ ticker?: string; cik?: string; date_from?: string; date_to?: string; submission_file_limit?: number; cursor?: string; limit?: number }> = {}) {
+    return this.get("/v1/events/restatements", params)
+  }
+
+  async auditorChangeEvents(params: RequestParams<{ ticker?: string; cik?: string; date_from?: string; date_to?: string; submission_file_limit?: number; cursor?: string; limit?: number }> = {}) {
+    return this.get("/v1/events/auditor-changes", params)
+  }
+
+  async ipoEvents(params: RequestParams<{ ticker?: string; cik?: string; date_from?: string; date_to?: string; submission_file_limit?: number; cursor?: string; limit?: number }> = {}) {
+    return this.get("/v1/events/ipo", params)
+  }
+
+  async officerChangeEvents(params: RequestParams<{ ticker?: string; cik?: string; date_from?: string; date_to?: string; submission_file_limit?: number; cursor?: string; limit?: number }> = {}) {
+    return this.get("/v1/events/officer-changes", params)
   }
 
   async votingResultsEvents(
@@ -1900,6 +1992,60 @@ export class SecApiClient {
     return this.get("/v1/dilution/coverage", params)
   }
 
+  // Situations plane (OMNI-5122, WS10/WS16). BILLABLE + authenticated reads over
+  // the SEC-derived special-situations dataset (M&A, tenders, spin-offs, ...).
+  // The list/feed/calendar routes accept `response_mode` (compact|standard|
+  // verbose|agent); the free anonymous lead-gen mirror is `embedSituations*`.
+  async situationsFeed(params: RequestParams<SituationFeedParams> = {}) {
+    return this.get("/v1/situations/feed", params)
+  }
+
+  async situationsFeedRss(params: RequestParams<SituationFeedRssParams> = {}) {
+    return this.get<string>("/v1/situations/feed.rss", params)
+  }
+
+  async situationsCalendar(
+    params: RequestParams<{ types?: string | string[]; date_types?: string | string[]; tickers?: string | string[]; days?: number; cursor?: string | number; limit?: number }> = {},
+  ) {
+    return this.get("/v1/situations/calendar", params)
+  }
+
+  async situationsStats(params: RequestParams<{ window?: string }> = {}) {
+    return this.get("/v1/situations/stats", params)
+  }
+
+  async situationsPerformance(
+    params: RequestParams<{ types?: string | string[]; window?: string; group_by?: "type" | "subtype" }> = {},
+  ) {
+    return this.get("/v1/situations/performance", params)
+  }
+
+  async situationDetail(situationId: string, params: RequestParams<Record<string, never>> = {}) {
+    return this.get(`/v1/situations/${encodeURIComponent(situationId)}`, params)
+  }
+
+  // Free public embeddable situations feed (lead-gen). No API key required;
+  // verification/provenance internals are stripped. Mirrors the billable
+  // situations plane above with a capped, recent-only view.
+  async embedSituations(
+    params: RequestParams<{ types?: string | string[]; tickers?: string | string[]; limit?: number }> = {},
+  ) {
+    return this.get("/v1/embed/situations", params)
+  }
+
+  async embedSituationsFeed(params: RequestParams<{ types?: string | string[]; limit?: number }> = {}) {
+    return this.get("/v1/embed/situations/feed", params)
+  }
+
+  async embedSituationsStats(params: RequestParams<Record<string, never>> = {}) {
+    return this.get("/v1/embed/situations/stats", params)
+  }
+
+  async embedSituationDetail(id: string, params: RequestParams<Record<string, never>> = {}) {
+    return this.get(`/v1/embed/situations/${encodeURIComponent(id)}`, params)
+  }
+
+  // Metrics serving plane (WS4, OMNI-5124). DORMANT: gated OFF behind the
   async form144Filings(
     params: RequestParams<{ ticker?: string; cik?: string; date_from?: string; date_to?: string; submission_file_limit?: number; cursor?: string; limit?: number; view?: ResponseView }> = {},
   ) {
@@ -1944,10 +2090,6 @@ export class SecApiClient {
 
   async marketReference(params: RequestParams<{ symbol?: string; ticker?: string }>) {
     return this.get("/v1/market/reference", params)
-  }
-
-  async marketEstimates(params: RequestParams<{ symbol?: string; ticker?: string; limit?: number }>) {
-    return this.get("/v1/market/estimates", params)
   }
 
   async newsStories(params: RequestParams<{ ticker?: string; cik?: string; q?: string; limit?: number }> = {}) {
@@ -2012,6 +2154,34 @@ export class SecApiClient {
 
   async macroCreditRating(country: string) {
     return this.get(`/v1/macro/credit-ratings/${encodeURIComponent(country)}`)
+  }
+
+  /**
+   * One-call country macro dashboard (WS12): headline indicators with
+   * latest/previous/change/direction and next release, current regime,
+   * upcoming releases, and sovereign credit rating.
+   */
+  async macroOverview(params: RequestParams<{ country?: string; response_mode?: "compact" | "standard" | "verbose" | "agent"; include?: string }> = {}) {
+    return this.get("/v1/macro/overview", params)
+  }
+
+  /**
+   * Bulk, filterable export of macro observations across countries and
+   * indicators (WS12). Cursor-paginated; `format=csv` returns an attachment
+   * and oversized exports are materialized asynchronously as an export job.
+   */
+  async macroAll(params: RequestParams<{ country?: string; countries?: string; indicator_type?: "growth" | "inflation" | "labor" | "rates" | "trade" | "fiscal" | "housing" | "sentiment" | "money" | "other"; indicator?: string; frequency?: "daily" | "weekly" | "monthly" | "quarterly" | "annual"; date_from?: string; date_to?: string; cursor?: string; limit?: number; format?: "json" | "csv" }> = {}) {
+    return this.get("/v1/macro/all", params)
+  }
+
+  /**
+   * Revenue-weighted macro sensitivities for a single company (WS12):
+   * geographic revenue segments crossed with the country macro plane, with
+   * per-indicator beta, direction, confidence, and a coverage percentage.
+   * Either `ticker` (alias `symbol`) or `cik` is required.
+   */
+  async companyMacroExposure(params: RequestParams<{ ticker?: string; symbol?: string; cik?: string; country?: string; lookback?: string; period?: "annual" | "quarterly" }> = {}) {
+    return this.get("/v1/companies/macro-exposure", params)
   }
 
   async factorCatalog(params: RequestParams<FactorCatalogParams> = {}) {
@@ -2409,15 +2579,22 @@ export class SecApiClient {
     return this.get("/v1/companies/search", params)
   }
 
-  async latest13F(params: RequestParams<{ cik: string; reportDate?: string; filingDate?: string; limit?: number; view?: ResponseView }>) {
+  async latest13F(params: RequestParams<{ cik: string; reportDate?: string; filingDate?: string; limit?: number; view?: Exclude<ResponseView, "compact"> }>) {
     return this.get("/v1/owners/13f", params)
   }
 
-  async institutionalHolders(params: RequestParams<{ ticker?: string; cik?: string; limit?: number; view?: ResponseView }>) {
+  async institutionalHolders(params: RequestParams<{
+    ticker?: string
+    cik?: string
+    reportDate?: string
+    filingDate?: string
+    limit?: number
+    view?: Exclude<ResponseView, "compact">
+  }>) {
     return this.get("/v1/owners/institutional/ticker", params)
   }
 
-  async agentInstitutionalHolders(params: RequestParams<{ ticker?: string; cik?: string; limit?: number }>) {
+  async agentInstitutionalHolders(params: RequestParams<{ ticker?: string; cik?: string; reportDate?: string; filingDate?: string; limit?: number }>) {
     return this.institutionalHolders({ ...params, view: "agent" })
   }
 
@@ -2459,7 +2636,21 @@ export class SecApiClient {
     return this.get("/v1/owners/13d-13g", params)
   }
 
-  async insiders(params: RequestParams<{ ticker?: string; cik?: string; forms?: string | string[]; date_from?: string; date_to?: string; cursor?: string; limit?: number; view?: ResponseView }>) {
+  async insiders(params: RequestParams<{
+    ticker?: string
+    cik?: string
+    forms?: string | string[]
+    date_from?: string
+    date_to?: string
+    owner_name?: string
+    owner_cik?: string
+    security_title?: string
+    transaction_code?: string
+    submission_file_limit?: number
+    cursor?: string
+    limit?: number
+    view?: ResponseView
+  }>) {
     return this.get("/v1/insiders", params)
   }
 
@@ -2511,6 +2702,165 @@ export class SecApiClient {
     return this.request(`/v1/artifacts/${encodeURIComponent(artifactId)}/reconcile`, {
       method: "POST",
     }, undefined, options)
+  }
+
+  // ----- Special Situations plane (WS10, OMNI-5122) -----
+
+  /**
+   * List durable special situations (M&A, tender offers, going-private,
+   * spin-offs, activist campaigns, restructuring, bankruptcy, …) with
+   * lifecycle status, deal terms, and market snapshot. Pass `forms` to filter
+   * by the EDGAR forms that triggered the situation, and `enrich=false` for
+   * the minimal stripped projection (billed identically).
+   */
+  async listSituations(params: RequestParams<SituationListParams> = {}) {
+    return this.get("/v1/situations", params)
+  }
+
+  /**
+   * Create a typed Special Situations monitor using the existing structured
+   * monitor API. Filters are validated client-side against the public
+   * `situationMonitorFilterSchema`; delivery can target an email recipient or
+   * the organization's configured webhook fanout.
+   */
+  async watchSituations(body: SituationWatchParams, options?: RequestOptions) {
+    const filters = body.filters ?? {}
+    const parsed = situationMonitorFilterSchema.safeParse(filters)
+    if (!parsed.success) throw new SecApiValidationError(filters, parsed.error.issues)
+    if (!Object.values(parsed.data).some((value) => Array.isArray(value) && value.length > 0)) {
+      throw new SecApiError({
+        message: "situations.watch requires at least one filter.",
+        status: 0,
+        code: "client_situation_watch_filter_required",
+      })
+    }
+    const rawDelivery = body.delivery
+    if (!rawDelivery || typeof rawDelivery !== "object") {
+      throw new SecApiError({
+        message: "situations.watch requires an email or organization webhook delivery destination.",
+        status: 0,
+        code: "client_situation_watch_delivery_required",
+      })
+    }
+    const email = "email" in rawDelivery && typeof rawDelivery.email === "string" ? rawDelivery.email.trim() : null
+    if ("email" in rawDelivery && !email) {
+      throw new SecApiError({
+        message: "situations.watch requires a non-empty email delivery address.",
+        status: 0,
+        code: "client_situation_watch_delivery_required",
+      })
+    }
+    const delivery = "email" in rawDelivery
+      ? { type: "email" as const, config: { to: email! } }
+      : { type: "webhook" as const, config: { organizationEventFanout: true as const } }
+    return this.createMonitor({
+      name: body.name?.trim() || "Special Situations watch",
+      query: "situations.watch",
+      searchMode: "situation",
+      filters: parsed.data,
+      startAt: body.startAt,
+      delivery,
+    }, options)
+  }
+
+  /** List immutable, numbered weekly Special Situations Digest issues. */
+  async situationsIssues(params: RequestParams<{ limit?: number }> = {}) {
+    return this.get<SituationWeeklyIssueList>("/v1/situations/issues", params)
+  }
+
+  /** Retrieve one immutable Special Situations Digest issue by number or slug. */
+  async situationIssue(issue: string | number, options?: RequestOptions) {
+    return this.get<SituationWeeklyIssue>(`/v1/situations/issues/${encodeURIComponent(String(issue))}`, options)
+  }
+
+  /**
+   * List special situations opened or advanced by a given EDGAR form type
+   * (e.g. `SC 13D`, `SC TO-T`, `425`, `DEFM14A`). The form is expanded to the
+   * situation types it triggers. `enrich=false` returns the stripped
+   * projection. The `form` path segment is URL-encoded for you.
+   */
+  async situationsByForm(form: string, params: RequestParams<SituationByFormParams> = {}) {
+    return this.get(`/v1/situations/by-form/${encodeURIComponent(form)}`, params)
+  }
+
+  /**
+   * Retrieve a single situation with its full per-filing timeline (oldest
+   * first). Pass `enrich=false` for the minimal stripped projection.
+   */
+  async getSituation(situationId: string, params: RequestParams<{ enrich?: "true" | "false" }> = {}) {
+    return this.get(`/v1/situations/${encodeURIComponent(situationId)}`, params)
+  }
+
+  /**
+   * Retrieve a situation's per-filing timeline as a paginated sub-resource
+   * (oldest first).
+   */
+  async situationFilings(situationId: string, params: RequestParams<{ cursor?: number; limit?: number }> = {}) {
+    return this.get(`/v1/situations/${encodeURIComponent(situationId)}/filings`, params)
+  }
+
+  /**
+   * Retrieve a compact situation summary: rendered markdown, deal terms, and
+   * the latest timeline event.
+   */
+  async situationSummary(situationId: string, options?: RequestOptions) {
+    return this.get(`/v1/situations/${encodeURIComponent(situationId)}/summary`, options)
+  }
+
+  /** Render a source-cited Markdown Copy-for-LLM brief for one situation. */
+  async exportSituation(situationId: string, options?: RequestOptions) {
+    return this.get<string>(`/v1/situations/${encodeURIComponent(situationId)}/export`, options)
+  }
+
+  /** Retrieve the deterministic, source-cited underwriting pack for one situation. */
+  async underwriteSituation(situationId: string, options?: RequestOptions) {
+    return this.get<SituationUnderwritingPack>(`/v1/situations/${encodeURIComponent(situationId)}/underwriting-pack`, options)
+  }
+
+  // ----- Filings-intelligence plane (WS11, OMNI-5123) -----
+
+  /**
+   * Persisted AI-tagged 8-K/6-K filing feed (StockInsights-style
+   * ai_insights). Cursor-paginated, replayable, one durable row per tagged
+   * filing.
+   */
+  async filingEvents(params: RequestParams<{ forms?: string; categories?: string; tickers?: string; date_from?: string; date_to?: string; cursor?: number; limit?: number; response_mode?: "compact" | "standard" | "verbose" | "agent" }> = {}) {
+    return this.get("/v1/filings/events", params)
+  }
+
+  /**
+   * Filing-diff v2 report: auto prior-period pairing, per-section change
+   * badges, word-level redline hunks, and materiality scores across two
+   * filings of the same form. `ticker` and `form` are required.
+   */
+  async filingDiff(params: RequestParams<{ ticker: string; form: string; from?: string; to?: string; sections?: string; include_hunks?: "true" | "false"; response_mode?: "compact" | "standard" | "verbose" | "agent" }>) {
+    return this.get("/v1/filings/diff", params)
+  }
+
+  /**
+   * Persisted earnings-transcript store: speaker attribution,
+   * prepared-remarks/Q&A segmentation, and summaries extracted from EX-99
+   * materials.
+   */
+  async filingTranscripts(params: RequestParams<{ tickers?: string; cik?: string; fiscal_period?: string; date_from?: string; date_to?: string; cursor?: number; limit?: number; response_mode?: "compact" | "standard" | "verbose" | "agent" }> = {}) {
+    return this.get("/v1/filings/transcripts", params)
+  }
+
+  /**
+   * Structured guidance store: metric, direction, target period, and value
+   * ranges extracted from earnings materials and transcripts.
+   */
+  async filingGuidance(params: RequestParams<{ tickers?: string; cik?: string; metric?: string; direction?: "raised" | "lowered" | "reaffirmed" | "initiated" | "withdrawn"; fiscal_period?: string; date_from?: string; date_to?: string; cursor?: number; limit?: number; response_mode?: "compact" | "standard" | "verbose" | "agent" }> = {}) {
+    return this.get("/v1/filings/guidance", params)
+  }
+
+  /**
+   * AI coverage-report composer: single-issuer rollup over the persisted
+   * filings-intelligence stores (tagged events, guidance, transcripts,
+   * footnote newness). Either `ticker` or `cik` is required.
+   */
+  async filingCoverage(params: RequestParams<{ ticker?: string; cik?: string; date_from?: string; date_to?: string; response_mode?: "compact" | "standard" | "verbose" | "agent" }> = {}) {
+    return this.get("/v1/intelligence/coverage", params)
   }
 
   async mcpInfo(options?: RequestOptions) {
@@ -2815,4 +3165,9 @@ export type {
   DilutionReverseSplit,
   DilutionShareFloatHistory,
   DilutionCoverage,
+  Situation,
+  SituationDetail,
+  SituationFeedItem,
+  SituationStats,
+  SituationPerformance,
 } from "./generated-contracts/index.js"
