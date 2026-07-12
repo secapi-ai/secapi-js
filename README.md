@@ -10,9 +10,9 @@ Query SEC filings, financial statements, ownership data, and filing sections fro
 npm install @secapi/sdk-js
 ```
 
-The package is ESM-only and includes TypeScript declarations.
+Requires Node.js 18 or newer. The package is ESM-only and includes TypeScript declarations.
 
-## Retrieve a filing
+## First request
 
 Set your API key:
 
@@ -20,7 +20,7 @@ Set your API key:
 export SECAPI_API_KEY="secapi_live_..."
 ```
 
-Then fetch Apple's latest 10-K:
+Create a client and fetch Apple's latest 10-K:
 
 ```ts
 import { SecApiClient } from "@secapi/sdk-js"
@@ -34,7 +34,7 @@ const filing = await sec.agentLatestFiling({
 console.log(filing)
 ```
 
-Save the example as `first-request.mjs` and run it with `node first-request.mjs`.
+Save this as `first-request.mjs`, then run `node first-request.mjs`. Need a key? [Create one](https://secapi.ai/signup).
 
 The compact response identifies the filing and links back to the SEC source:
 
