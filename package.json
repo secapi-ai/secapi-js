@@ -1,7 +1,7 @@
 {
   "name": "@secapi/sdk-js",
   "version": "1.2.0",
-  "description": "JavaScript SDK for SEC API filing search, financial statements, ownership data, and filing sections.",
+  "description": "Official JavaScript SDK for SEC API filing discovery and source-cited filing metadata.",
   "private": false,
   "type": "module",
   "engines": {
@@ -31,11 +31,17 @@
   },
   "keywords": [
     "sec",
+    "sec-api",
+    "secapi",
     "edgar",
+    "sec-filings",
+    "filing-search",
+    "javascript-sdk",
+    "typescript",
     "financial-data",
-    "mcp"
+    "source-citations"
   ],
-  "homepage": "https://secapi.ai/developers",
+  "homepage": "https://docs.secapi.ai",
   "bugs": {
     "url": "https://github.com/secapi-ai/secapi-js/issues"
   },

@@ -1,8 +1,8 @@
 # SEC API JavaScript SDK
 
-The SEC API JavaScript SDK lets ESM applications query SEC filings, financial statements, ownership data, and filing sections through `api.secapi.ai`.
+Use `@secapi/sdk-js` to retrieve SEC API filing data from a JavaScript or TypeScript server application.
 
-[Documentation](https://docs.secapi.ai) | [API reference](https://docs.secapi.ai/api-reference) | [Get an API key](https://secapi.ai/signup)
+[Documentation](https://docs.secapi.ai) | [API reference](https://docs.secapi.ai/api-reference) | [Pricing](https://secapi.ai/pricing) | [Status](https://status.secapi.ai/)
 
 ## Install
 
@@ -10,61 +10,39 @@ The SEC API JavaScript SDK lets ESM applications query SEC filings, financial st
 npm install @secapi/sdk-js
 ```
 
-## First request
+## First cited filing
 
-In Node.js or Bun, set an API key in your environment:
+Create an API key, keep it in your server environment, and export it. The client reads `SECAPI_API_KEY` and sends it as the `x-api-key` request header.
 
 ```bash
 export SECAPI_API_KEY="secapi_live_..."
 ```
 
-Then request the latest Apple 10-K. This works in JavaScript (`.mjs`) and TypeScript (`.ts`):
+Save this as `index.mjs`, then run `node index.mjs`:
 
-```ts
+```js
 import { SecApiClient } from "@secapi/sdk-js"
 
 const sec = new SecApiClient()
-const filing = await sec.agentLatestFiling({
-  ticker: "AAPL",
-  form: "10-K",
-})
+const filing = await sec.filings.latest({ ticker: "AAPL", form: "10-K" })
 
-console.log(filing)
-```
-
-The response is a compact filing object. Confirm the result has the expected `ticker`, `form`, and `accessionNumber` before using it downstream; the accession number identifies the SEC filing. When present, use `filingUrl` to link back to its SEC source.
-
-## Compatibility and configuration
-
-- Published as ESM only. Use `import`, not CommonJS `require()`.
-- Node.js 18 or later is supported for REST requests. Bun, Deno, and modern browsers also need a standards-compatible global `fetch`.
-- Filing streaming additionally requires a global `WebSocket`; this is available in Node.js 21+, Bun, Deno, and modern browsers.
-- In Node.js and Bun, `new SecApiClient()` reads `SECAPI_API_KEY` from `process.env` and sends it as `x-api-key`.
-- In Deno, pass `apiKey: Deno.env.get("SECAPI_API_KEY")` when constructing the client.
-- Browser applications should call the SDK through a server or proxy and must never bundle an API key.
-
-To configure a Node.js or Bun client explicitly, including a custom API origin:
-
-```ts
-const sec = new SecApiClient({
-  apiKey: process.env.SECAPI_API_KEY,
-  baseUrl: "https://api.secapi.ai",
+console.log({
+  ticker: filing.ticker,
+  form: filing.form,
+  accessionNumber: filing.accessionNumber,
+  filingDate: filing.filingDate,
+  source: filing.provenance.source,
+  filingUrl: filing.provenance.filingUrl,
 })
 ```
 
-In Deno:
+The response includes the filing's accession number, filing date, and `provenance` record. Preserve `accessionNumber` and `provenance.filingUrl` with any result that cites the filing.
 
-```ts
-const sec = new SecApiClient({
-  apiKey: Deno.env.get("SECAPI_API_KEY"),
-})
-```
+## Compatibility and support
 
-See the [API reference](https://docs.secapi.ai/api-reference) for endpoints, parameters, response fields, and authentication details.
+This ESM package supports Node.js 18 or later. Keep API keys out of browser bundles; call the SDK from your server or a server-side proxy.
 
-## Migration and support
-
-`SecApiClient` is the current client name. Existing integrations using `OmniDatastreamClient` can continue to run because it remains an alias for `SecApiClient`; migrate imports when you next update application code. For help, review the [documentation](https://docs.secapi.ai), check [API status](https://status.secapi.ai), or [open an SDK issue](https://github.com/secapi-ai/secapi-js/issues) with the request ID from the API response or `SecApiError`.
+For endpoint parameters and response fields, use the [API reference](https://docs.secapi.ai/api-reference). For help, visit [Support](https://secapi.ai/support) or [open an SDK issue](https://github.com/secapi-ai/secapi-js/issues).
 
 ## License
 
