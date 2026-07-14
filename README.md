@@ -1,6 +1,6 @@
 # SEC API JavaScript SDK
 
-`@secapi/sdk-js` is an ESM client for retrieving SEC filings, filing sections, financial statements, and ownership data from [SEC API](https://secapi.ai/developers). It includes TypeScript declarations. REST calls support Node.js 18 or newer; `streamFilings()` requires a global `WebSocket` (Node.js 21+, Bun, Deno, or browsers), so Node.js 18 callers must provide a polyfill or upgrade.
+`@secapi/sdk-js` is an ESM JavaScript and TypeScript client for retrieving SEC filings, filing sections, financial statements, and ownership data from [SEC API](https://secapi.ai/developers).
 
 [Documentation](https://docs.secapi.ai) · [Get an API key](https://secapi.ai/signup) · [Support](https://github.com/secapi-ai/secapi-js/issues) · [Status](https://status.secapi.ai)
 
@@ -16,35 +16,17 @@ export SECAPI_API_KEY="secapi_live_..."
 Create `first-request.mjs`:
 
 ```js
-import { SecApiClient, SecApiError } from "@secapi/sdk-js"
+import { SecApiClient } from "@secapi/sdk-js"
 
 const client = new SecApiClient()
+const filing = await client.agentLatestFiling({ ticker: "AAPL", form: "10-K" })
 
-try {
-  const filing = await client.agentLatestFiling({
-    ticker: "AAPL",
-    form: "10-K",
-  })
-
-  console.log(JSON.stringify({
-    accessionNumber: filing.accessionNumber,
-    filingDate: filing.filingDate,
-    filingUrl: filing.filingUrl,
-    requestId: filing.requestId,
-  }, null, 2))
-} catch (error) {
-  if (error instanceof SecApiError) {
-    console.error({ status: error.status, code: error.code, requestId: error.requestId })
-    process.exitCode = 1
-  } else {
-    throw error
-  }
-}
+console.log(filing.accessionNumber)
 ```
 
-Run it with `node first-request.mjs`. The response identifies the latest matching filing and its SEC source URL. The accession number and filing date are live values, so they change when a newer filing is available.
+Run `node first-request.mjs`. It prints the accession number for the latest matching Apple 10-K; this live value changes when a newer filing is available. `agentLatestFiling()` requests the endpoint's `agent` view. Use `latestFiling()` for the default endpoint response.
 
-`agentLatestFiling()` requests the endpoint's `agent` view. Use `latestFiling()` when you need the default endpoint response instead.
+**Compatibility and support:** REST calls require Node.js 18 or newer. `streamFilings()` requires a global `WebSocket` (Node.js 21+, Bun, Deno, or browsers); Node.js 18 callers need a polyfill or a newer runtime. Read the [JavaScript SDK guide](https://docs.secapi.ai/javascript-sdk) for API details, and [open an issue](https://github.com/secapi-ai/secapi-js/issues) for SDK support.
 
 ## Common requests
 
