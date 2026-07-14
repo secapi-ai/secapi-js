@@ -261,6 +261,7 @@ export const statementSchema = z.object({
   freshness: freshnessMetadataSchema.optional(),
   materialization: materializationMetadataSchema.optional(),
   validation: validationStatusSchema.optional(),
+  traceparent: z.string().optional(),
 })
 
 export const statementBundleSchema = z.object({
@@ -281,6 +282,7 @@ export const statementBundleSchema = z.object({
   freshness: freshnessMetadataSchema.optional(),
   materialization: materializationMetadataSchema.optional(),
   validation: validationStatusSchema.optional(),
+  traceparent: z.string().optional(),
 })
 
 export const segmentedFactMetricSchema = z.enum(["revenue", "profit_loss"])
@@ -324,6 +326,7 @@ export const segmentedRevenueSeriesSchema = z.object({
   freshness: freshnessMetadataSchema.optional(),
   materialization: materializationMetadataSchema.optional(),
   validation: validationStatusSchema.optional(),
+  traceparent: z.string().optional(),
 })
 
 export const segmentedFactRecordSchema = segmentedRevenueRecordSchema.extend({
@@ -349,6 +352,7 @@ export const segmentedFactSeriesSchema = z.object({
   freshness: freshnessMetadataSchema.optional(),
   materialization: materializationMetadataSchema.optional(),
   validation: validationStatusSchema.optional(),
+  traceparent: z.string().optional(),
 })
 
 // ---------------------------------------------------------------------------
@@ -564,6 +568,15 @@ export const companyOverviewEnrichmentsSchema = z.object({
   factors: companyOverviewEnrichmentSchema,
 })
 
+// Cross-plane discovery links on the company profile. `fundLetters` points at
+// the per-company fund-letter thesis screen
+// (`/v1/fund-letters/theses?ticker=...` | `?cik=...`) and is present ONLY while
+// the fund-letters plane is enabled (OMNI_FUND_LETTERS_ENABLED) — the target
+// 404s while the plane is dormant, so the profile never advertises a dead link.
+export const companyOverviewLinksSchema = z.object({
+  fundLetters: z.string().optional(),
+})
+
 export const companyOverviewSchema = z.object({
   object: z.literal("company_overview"),
   id: z.string(),
@@ -573,6 +586,7 @@ export const companyOverviewSchema = z.object({
   latestMaterialFiling: companyOverviewLatestFilingSchema.nullable(),
   financialSnapshot: companyOverviewFinancialSnapshotSchema,
   enrichments: companyOverviewEnrichmentsSchema,
+  links: companyOverviewLinksSchema.optional(),
   provenance: provenanceSchema.nullable().optional(),
   freshness: freshnessMetadataSchema.optional(),
 })
@@ -643,6 +657,7 @@ export const shareFloatSchema = z.object({
   freshness: freshnessMetadataSchema.optional(),
   materialization: materializationMetadataSchema.optional(),
   validation: validationStatusSchema.optional(),
+  traceparent: z.string().optional(),
 })
 
 export const companyFinancialRecordSchema = z.object({
@@ -2532,6 +2547,7 @@ export const statementAgentRecordSchema = statementSchema
       sourceUrl: z.string().url(),
     })).default([]),
     requestId: z.string(),
+    traceparent: z.string().optional(),
   })
 
 export const factPointAgentItemSchema = factPointSchema

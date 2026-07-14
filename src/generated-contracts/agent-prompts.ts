@@ -73,6 +73,12 @@ export type PersonaDisplayMeta = {
   displayName: string
   slug: AgentPromptPersona
   summary: string
+  /** Editorial introduction rendered above the persona's prompt list. */
+  intro: string
+  /** Optional operational note rendered below the introduction. */
+  tip?: string
+  /** Evidence standard rendered after the persona's prompt list. */
+  evidenceStandard: string
   /** Optional note for the persona index page header — surfaces v1 framing vs v2 expansion. */
   framingNote?: string
 }
@@ -83,26 +89,46 @@ export const PERSONA_DISPLAY: Record<AgentPromptPersona, PersonaDisplayMeta> = {
     slug: "law-firm",
     summary:
       "Disclosure forensics, deal diligence, enforcement research, and litigation binder workflows for legal teams advising on public-company matters.",
+    intro:
+      "These prompts organize public-company filing research into reviewable work product. They do not provide legal advice or establish a complete record.",
+    tip:
+      "For a date window, retrieve candidate records first, then post-filter the returned filingDate locally before selecting sections or exports.",
+    evidenceStandard:
+      "Treat the cited filing, section, accession number, and filing date as the evidence. Re-open the source filing before relying on a material conclusion.",
   },
   "investment-manager": {
     displayName: "Investment manager",
     slug: "investment-manager",
     summary:
       "Quant research, factor decomposition, 13F-vs-insider divergence, and earnings-context workflows for portfolio managers and analysts.",
+    intro:
+      "Use these prompts to prepare an investment-committee input, not an investment recommendation. Specify the evaluation date: SEC filings, 13F reports, and factor data have different reporting and update schedules.",
+    evidenceStandard:
+      "Keep reported filing facts, delayed ownership reports, and model outputs separate. Neither a 13F filing nor Form 4 activity establishes conviction or intent.",
   },
   "sophisticated-investor": {
     displayName: "Sophisticated investor",
     slug: "sophisticated-investor",
     summary:
       "Forensic accounting and insider surveillance for activist, short-thesis, and prosumer analyst workflows.",
+    intro:
+      "These prompts help pressure-test a thesis against filings and reported market context. They do not establish fraud, manipulation, or an investment conclusion.",
+    evidenceStandard:
+      "Use the source filing as the record. Preserve fiscal period, filing date, accession, section, and any stated assumptions beside calculated views.",
     framingNote:
       "Forensic accounting workflows: footnote forensics, insider/13F divergence, and cash-flow stress.",
   },
   insurance: {
-    displayName: "Insurance & risk",
+    displayName: "Insurance and risk",
     slug: "insurance",
     summary:
       "D&O underwriting profile, auditor-change detection, material-weakness scans, and renewal-book monitoring for risk and underwriting teams.",
+    intro:
+      "These prompts help an underwriting or claims team turn public disclosures into a reviewable research packet. They do not score a risk, establish coverage, or predict a claim.",
+    tip:
+      "For a book review, use no more than 50 tickers per batched company call. For every alert, keep the accession number, filing date, and exact disclosure excerpt.",
+    evidenceStandard:
+      "Use SEC filings as the record. 13F reports are delayed institutional disclosures, Form 4 transactions have transaction-code context, and analytics outputs may change with revised data.",
     framingNote:
       "D&O risk workflows: D&O profile via comp/13F/insider stack, keyword-search auditor changes, and semantic material-weakness detection.",
   },
@@ -111,10 +137,23 @@ export const PERSONA_DISPLAY: Record<AgentPromptPersona, PersonaDisplayMeta> = {
     slug: "pr-firm",
     summary:
       "Proxy-season narrative, 8-K material event monitoring, executive transition tracking, and peer benchmarking for IR and crisis-comms teams.",
+    intro:
+      "These prompts produce factual, source-backed communications research. They do not determine materiality, predict market reaction, or substitute for counsel and issuer review.",
+    evidenceStandard:
+      "Keep each filing's form, filing date, accession, section, and source URL with the briefing. Separate disclosed facts from open questions and proposed messaging.",
   },
 }
 
-export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
+export const AGENT_PROMPT_LIBRARY_INDEX = {
+  intro:
+    "Use these prompts with the hosted [SEC API MCP server](/mcp-install). Supply the bracketed inputs, let the agent inspect the relevant tool schemas, and retain filing links and accession numbers in the output.",
+  note:
+    "SEC API returns public filing and market-derived data. A prompt can organize evidence; it cannot determine legal liability, suitability, underwriting terms, or investment merit.",
+  evidence:
+    "The prompts favor `entities.resolve`, `filings.search`, `sections.get`, and `sections.search` for primary-source work. Tools such as `intelligence.query`, factor analytics, and 13F data are useful leads or context, not substitutes for the underlying filing.",
+} as const
+
+const RAW_AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
   // ----------------------------------------------------------------------------
   // INVESTMENT-MANAGER (12 v1)
   // ----------------------------------------------------------------------------
@@ -122,16 +161,16 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "investment-manager-factor-decomposition",
     persona: "investment-manager",
     status: "v1",
-    title: "Decompose portfolio factor exposures with intelligence overlay",
+    title: "Portfolio factor and filing brief",
     category: "Factor research",
     oneLiner:
       "Pull factor exposures and overlay security intelligence for a portfolio or watchlist.",
     prompt:
-      "You are an investment research agent with access to SEC API. For any portfolio or watchlist of US equities, pull a security-intelligence bundle for each name, run factor exposure decomposition (momentum, value, quality, low-volatility, size), compare quarter-over-quarter 13F ownership changes for key institutional holders, and flag material insider transactions from the past 90 days. Output a per-name memo with factor weights, top three institutional rotations, top three insider clusters, and one paragraph of analyst commentary. Always cite requestId and provenance for every figure.",
+      "For holdings [TICKER: WEIGHT] as of [DATE], calculate portfolio and security factor context, then retrieve each issuer's latest material filing and recent Form 4 activity. Return factor outputs separately from filing facts, with accession numbers and transaction dates. Factor exposure is descriptive, not a forecast; 13F and Form 4 activity do not establish conviction. Use portfolio.analyze, factors.decomposition, companies.overview, filings.search, and insiders.list.",
     expectedToolChain: [
       { tool: "portfolio.analyze", purpose: "Compute portfolio-level factor weights and country exposure", exampleArgs: { holdings: [{ symbol: "AAPL", weight: 0.3 }, { symbol: "MSFT", weight: 0.4 }, { symbol: "NVDA", weight: 0.3 }], country: "US" } },
       { tool: "factors.decomposition", purpose: "Decompose per-security factor loadings", exampleArgs: { symbol: "AAPL", lookback: 252 } },
-      { tool: "owners.compare_13f", purpose: "Quarter-over-quarter institutional rotation per name", exampleArgs: { cik: "0001067983" } },
+      { tool: "companies.overview", purpose: "Current issuer context for each holding", exampleArgs: { ticker: "AAPL" } },
       { tool: "insiders.list", purpose: "Recent Form 4 insider transactions per name", exampleArgs: { ticker: "AAPL", limit: 20 } },
     ],
     expectedOutput: "Per-name research memo (markdown) with factor weights, institutional rotations, insider clusters, and requestId citations.",
@@ -141,12 +180,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "investment-manager-13f-quarterly-rotation",
     persona: "investment-manager",
     status: "v1",
-    title: "Compare 13F holdings quarter-over-quarter for smart-money rotation",
+    title: "13F rotation ledger",
     category: "Ownership intelligence",
     oneLiner:
       "Identify quarter-over-quarter institutional rotation across an institutional holder's portfolio.",
     prompt:
-      "For Berkshire Hathaway (CIK 0001067983), pull the latest 13F holdings, compare against the previous quarter, surface the top ten new positions, top ten exits, and top ten size changes. For each surfaced ticker, fetch the latest insider transactions to triangulate manager conviction. Output a markdown table with ticker, position delta (shares + dollars), insider-buy ratio, and a one-line interpretation per row.",
+      "For 13F manager [13F MANAGER CIK], compare the latest two reported quarters. List additions, exits, and largest changes with the report period, filing date, shares, and reported value; then add recent issuer Form 4 activity as a separate context column for [TOP N] names. A manager CIK is required for `owners.get_13f` and `owners.compare_13f`; do not pass an issuer ticker or issuer CIK. Do not describe a quarterly filing as real-time positioning or infer motive. Use entities.resolve, owners.get_13f, owners.compare_13f, insiders.list, and filings.search.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve the holder identifier to a best-match entity", exampleArgs: { cik: "0001067983" } },
       { tool: "owners.get_13f", purpose: "Latest holdings snapshot", exampleArgs: { cik: "0001067983", limit: 50 } },
@@ -160,12 +199,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "investment-manager-related-stocks-screen",
     persona: "investment-manager",
     status: "v1",
-    title: "Build a factor-similar peer set with momentum and quality overlays",
+    title: "Comparable-screen review",
     category: "Screening",
     oneLiner:
       "Generate a factor-similar peer set and rank by momentum/quality overlay.",
     prompt:
-      "For NVDA, generate the closest 25 factor-similar US tickers, decompose each candidate's factor exposure, and rank by composite momentum + quality score. Pull each candidate's trailing-twelve-month financial ratios for valuation context. Output a ranked table with ticker, momentum score, quality score, P/E, ROIC, and a one-line thesis on why the peer is worth tracking.",
+      "For [TICKER], request up to [N] factor-similar securities and retrieve their latest reported ratios and annual financial statements. Produce a screened peer table with the factor method, fiscal period, and missing-data flags. Similar factor profiles are not business comparability or a valuation conclusion. Use entities.resolve, factors.related_stocks, factors.decomposition, companies.ratios, and companies.financials.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve the seed symbol", exampleArgs: { ticker: "NVDA" } },
       { tool: "factors.related_stocks", purpose: "Factor-similar peer set", exampleArgs: { symbol: "NVDA", limit: 25 } },
@@ -179,12 +218,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "investment-manager-regime-aware-screen",
     persona: "investment-manager",
     status: "v1",
-    title: "Run a macro-regime-aware factor screen",
+    title: "Regime-aware watchlist note",
     category: "Macro overlay",
     oneLiner:
-      "Pick factors aligned with the current macro regime and screen a watchlist accordingly.",
+      "Pick factors aligned with the current macro regime and rank a watchlist accordingly.",
     prompt:
-      "Pull the current US macro regime classification, surface the top three factor returns trailing 90 days, then screen my watchlist of large-cap US tech names against the regime-favored factors. Output a ranked list of names that align with the regime, including factor weights and a one-paragraph regime-context narrative for the brief.",
+      "For [TICKER LIST] and country [COUNTRY], retrieve the current macro regime, high-signal macro pack, factor dashboard, and each security's factor decomposition. Write a dated watchlist note that separates observed macro data from factor analytics and calls out data freshness. Do not turn a regime classification into a timing recommendation. Use macro.regimes, macro.high_signal_pack, factors.dashboard, factors.decomposition, and portfolio.analyze.",
     expectedToolChain: [
       { tool: "macro.regimes", purpose: "Current regime classification", exampleArgs: { country: "US", lookback: 252 } },
       { tool: "macro.high_signal_pack", purpose: "Top macro indicator pack for regime context", exampleArgs: { country: "US" } },
@@ -198,12 +237,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "investment-manager-earnings-context-pack",
     persona: "investment-manager",
     status: "v1",
-    title: "Build an earnings-preview context pack",
+    title: "Earnings-context pack",
     category: "Earnings prep",
     oneLiner:
       "Compile recent fundamentals, management guidance, and the latest MD&A excerpt before an earnings print.",
     prompt:
-      "For AAPL ahead of next earnings, pull the trailing four quarters of income statement, the most recent MD&A section from the last 10-Q, and recent earnings-related 8-K disclosures. Identify the largest sequential changes in revenue, margins, and cash generation, then surface MD&A passages and company guidance that explain them. Output a one-page brief with bullets for setup, key debate, and watch-points.",
+      "For [TICKER] before [EVENT DATE], retrieve the last four reported quarters of income statements, the latest 10-Q MD&A, and recent 8-K filings. Identify reported sequential changes and link each explanation to the filing section; label open questions rather than predicting the print. Use entities.resolve, companies.income_statements, sections.get, filings.search, and filings.latest.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve to best-match CIK", exampleArgs: { ticker: "AAPL" } },
       { tool: "companies.income_statements", purpose: "Trailing four quarters", exampleArgs: { ticker: "AAPL", period: "quarterly", limit: 4 } },
@@ -217,12 +256,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "investment-manager-multi-period-fundamental-trend",
     persona: "investment-manager",
     status: "v1",
-    title: "Pull 5-year fundamental trends for thesis validation",
+    title: "Multi-year fundamentals table",
     category: "Fundamentals",
     oneLiner:
       "Walk five years of revenue, margins, cash conversion, and ratios for a name.",
     prompt:
-      "For MSFT, pull five years of annual income statement, balance sheet, cash flow statement, and key ratios. Surface a year-over-year delta table for revenue, gross margin, operating margin, free cash flow, ROIC, and net debt/EBITDA. Highlight any year where two or more metrics inflected by more than 20 percent and ask the agent to hypothesize the driver.",
+      "For [TICKER] across [FY FROM]-[FY TO], retrieve annual income, balance-sheet, cash-flow, and ratio data. Create a period-aligned table of reported revenue, margins, cash flow, debt, and documented inflections, with fiscal-year labels. Do not compare non-comparable periods or attribute a change without a cited filing discussion. Use entities.resolve, companies.income_statements, companies.balance_sheets, companies.cash_flow_statements, and companies.ratios. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve to best-match CIK", exampleArgs: { ticker: "MSFT" } },
       { tool: "companies.income_statements", purpose: "5-year income trend", exampleArgs: { ticker: "MSFT", period: "annual", limit: 5 } },
@@ -236,12 +275,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "investment-manager-intelligence-bundle-grounded",
     persona: "investment-manager",
     status: "v1",
-    title: "Generate a security intelligence bundle with footnote citations",
+    title: "Filing-grounded issuer brief",
     category: "Issuer brief",
     oneLiner:
       "Produce a citation-grounded company intelligence bundle for an allocator brief.",
     prompt:
-      "For TSLA, build a company intelligence brief that combines the latest semantic intelligence query (covering valuation, governance, and risk), the most recent debt-covenant footnote, the latest segment-revenue footnote, and the latest balance sheet snapshot. Output a markdown brief with three sections (signal, balance-sheet posture, footnote red-flags) and inline citations to filing URLs.",
+      "For [TICKER], use intelligence.query only to identify research leads, then retrieve the current balance sheet, relevant footnotes, and MD&A from the underlying filing. Deliver a three-part brief: reported facts, source excerpts, and questions. Every claim needs a form, period, accession, and section or footnote; an intelligence response alone is not a citation. Use intelligence.query, intelligence.footnotes, sections.get, companies.balance_sheets, and filings.search.",
     expectedToolChain: [
       { tool: "intelligence.query", purpose: "Top-of-funnel semantic signal", exampleArgs: { query: "TSLA capital structure governance debate", entities: ["TSLA"] } },
       { tool: "intelligence.footnotes", purpose: "Debt-covenant + segment footnotes", exampleArgs: { ticker: "TSLA", form: "10-K", topics: ["debt_covenant", "segment"] } },
@@ -255,12 +294,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "investment-manager-portfolio-stress-test",
     persona: "investment-manager",
     status: "v1",
-    title: "Stress-test portfolio against macro regimes",
+    title: "Portfolio scenario stress",
     category: "Risk",
     oneLiner:
       "Project portfolio factor returns across alternative macro regimes.",
     prompt:
-      "Take my current portfolio (NVDA 30%, AAPL 25%, MSFT 25%, GOOGL 20%), run portfolio.analyze for current factor exposures, then pull factor returns under the prevailing regime AND the prior 12-month regime. Build a stress table comparing realized portfolio returns under each regime and surface the two factors with the largest swing. Output a one-page risk note for the IC.",
+      "For holdings [TICKER: WEIGHT], first list available scenarios, then run [SCENARIO KEY] and summarize factor exposures and scenario results. State the valuation date, assumptions, and residual exposures. Treat this as a model scenario, not realized-return history or a hedge instruction. Use portfolio.stress_scenarios, portfolio.stress_test, portfolio.analyze, factors.dashboard, and macro.regimes.",
     expectedToolChain: [
       { tool: "portfolio.analyze", purpose: "Current portfolio factor exposures", exampleArgs: { holdings: [{ symbol: "NVDA", weight: 0.3 }, { symbol: "AAPL", weight: 0.25 }, { symbol: "MSFT", weight: 0.25 }, { symbol: "GOOGL", weight: 0.2 }], country: "US" } },
       { tool: "macro.regimes", purpose: "Current and prior regimes", exampleArgs: { country: "US", lookback: 504 } },
@@ -274,17 +313,17 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "investment-manager-insider-13f-divergence",
     persona: "investment-manager",
     status: "v1",
-    title: "Spot insider buying that contradicts institutional rotation",
+    title: "Insider versus 13F review",
     category: "Smart-money signals",
     oneLiner:
       "Find names where insiders are buying while institutions are selling.",
     prompt:
-      "For my watchlist of small-cap US healthcare names, identify any tickers where insiders have been net buyers in the past 90 days while one or more 13F filers have been net sellers in the latest quarter. For each match, surface the top insider buyers (Form 4) and the top institutional sellers, plus the latest 90-day insider net-buy dollar volume and the institutional position delta in shares. Output a table ranked by signal strength.",
+      "For [TICKER LIST], compare recent Form 4 transactions with the latest two 13F periods for named managers [13F MANAGER CIK LIST]. Keep issuer insiders, transaction codes, and 13F holdings in separate fields with dates. `owners.get_13f` and `owners.compare_13f` require each manager CIK, not the issuer ticker or issuer CIK. Rank only by clearly defined reported measures; do not characterize the combination as a buy or sell signal. Use entities.resolve, insiders.list, owners.get_13f, owners.compare_13f, and filings.search.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve each ticker", exampleArgs: { ticker: "MULN" } },
       { tool: "insiders.list", purpose: "90-day insider transaction history", exampleArgs: { ticker: "MULN", limit: 50 } },
-      { tool: "owners.get_13f", purpose: "Latest institutional snapshot per ticker", exampleArgs: { cik: "0000789019" } },
-      { tool: "owners.compare_13f", purpose: "Quarter-over-quarter institutional delta", exampleArgs: { cik: "0000789019" } },
+      { tool: "owners.get_13f", purpose: "Latest holdings for a named 13F manager", exampleArgs: { cik: "0001067983" } },
+      { tool: "owners.compare_13f", purpose: "Quarter-over-quarter delta for that 13F manager", exampleArgs: { cik: "0001067983" } },
     ],
     expectedOutput: "Ranked table of divergence candidates with insider $ + institutional Δshares.",
     difficulty: "intermediate",
@@ -293,17 +332,17 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "investment-manager-comp-aligned-incentives",
     persona: "investment-manager",
     status: "v1",
-    title: "Audit executive compensation alignment with shareholder returns",
+    title: "Executive-pay context review",
     category: "Governance",
     oneLiner:
-      "Compare named-executive compensation against TSR + market context.",
+      "Compare named-executive compensation against SEC-derived financial context.",
     prompt:
-      "For META, pull the latest named-executive compensation disclosures and the prior year's compensation, compare year-over-year base + equity + total, then overlay trailing 12-month total shareholder return and the latest market financials. Output an alignment scorecard (0-10) with bullets on (a) pay-for-performance correlation, (b) equity grant timing relative to drawdowns, (c) any outlier comp items vs peers.",
+      "For [TICKER], retrieve the latest and prior proxy compensation disclosures, current financial statements, and factor-similar peers' compensation records. Compare reported pay components and performance measures with fiscal periods shown. Do not assign a pay-for-performance score unless its formula and missing inputs are explicit. Use entities.resolve, comp.list, comp.compare, companies.ratios, and factors.related_stocks.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve to best-match CIK", exampleArgs: { ticker: "META" } },
       { tool: "comp.list", purpose: "Latest named-executive comp", exampleArgs: { ticker: "META", limit: 10 } },
       { tool: "comp.compare", purpose: "Year-over-year comp comparison", exampleArgs: { ticker: "META", limit: 10 } },
-      { tool: "market.financials", purpose: "TSR + price context", exampleArgs: { ticker: "META", timeframe: "annual", limit: 3 } },
+      { tool: "companies.ratios", purpose: "SEC-derived financial ratio context", exampleArgs: { ticker: "META", period: "annual", limit: 3 } },
     ],
     expectedOutput: "Alignment scorecard 0-10 with 3 bullets and supporting figures.",
     difficulty: "intermediate",
@@ -312,12 +351,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "investment-manager-segment-revenue-forensics",
     persona: "investment-manager",
     status: "v1",
-    title: "Decompose segment revenue trajectories",
+    title: "Segment trajectory reading",
     category: "Fundamentals",
     oneLiner:
       "Walk segment revenue + segment-disclosure footnotes for a diversified issuer.",
     prompt:
-      "For AMZN, pull the segment-revenue disclosure footnote (intelligence.footnotes topic=segment), align with the latest annual income statement segment columns, and walk five years of segment-mix shift. Surface the segment with the largest absolute growth, the segment with the largest margin compression, and the latest 10-K Item 8 segment table excerpt. Output a markdown narrative + segment-mix waterfall.",
+      "For [TICKER] across [FY FROM]-[FY TO], retrieve segment footnotes, annual income statements, and Item 8 financial-statement sections. Build a segment table from reported disclosures and identify changes management discusses. Do not manufacture segment margins or reconcile segments beyond disclosed data. Use entities.resolve, intelligence.footnotes, companies.income_statements, sections.get, and filings.search. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve to best-match CIK", exampleArgs: { ticker: "AMZN" } },
       { tool: "intelligence.footnotes", purpose: "Segment-disclosure footnotes", exampleArgs: { ticker: "AMZN", form: "10-K", topics: ["segment"] } },
@@ -331,12 +370,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "investment-manager-macro-tilt-recommendation",
     persona: "investment-manager",
     status: "v1",
-    title: "Draft macro tilt scenarios based on cross-country regime divergence",
+    title: "Cross-country macro tilt memo",
     category: "Macro overlay",
     oneLiner:
       "Compare regimes across major markets and draft country/factor tilt research scenarios.",
     prompt:
-      "Compare current macro regime classifications across US, Eurozone, Japan, and emerging markets. For each market, pull the latest high-signal indicator pack and the prevailing-regime factor returns. Draft a country/factor tilt research scenario with one paragraph of evidence per market. Output a tilt table + 4-paragraph rationale.",
+      "Compare countries [COUNTRY LIST] using macro regimes, high-signal packs, and factor dashboards for [LOOKBACK]. Produce dated scenarios for a portfolio [HOLDINGS], stating source freshness and what would falsify each scenario. Do not recommend allocation changes or present modeled relationships as forecasts. Use macro.regimes, macro.high_signal_pack, macro.country_report, factors.dashboard, and portfolio.analyze. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "macro.regimes", purpose: "Per-country regime classifications", exampleArgs: { country: "US", lookback: 252 } },
       { tool: "macro.indicators", purpose: "Recent indicator history per country", exampleArgs: { country: "US", indicatorKey: "industrial_production", limit: 12 } },
@@ -354,12 +393,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "law-firm-enforcement-history",
     persona: "law-firm",
     status: "v1",
-    title: "Build a 12-month enforcement and disclosure dossier for a client target",
+    title: "Issuer disclosure dossier",
     category: "Enforcement research",
     oneLiner:
       "Compile 12 months of filings, legal proceedings, and insider activity for due diligence.",
     prompt:
-      "You are a SEC filings research assistant with access to SEC API. For any client target company, resolve the entity to the best-match CIK, pull the past 12 months of filings (8-K, 10-K, 10-Q, DEF 14A), extract the legal-proceedings section (Item 3) from the most recent 10-K, list insider trading activity from the past 12 months, and surface any 8-K Item 5.02 (officer/director departures) events. Output a dossier with one section per finding category and inline requestId references for auditability.",
+      "For [TICKER] during [DATE RANGE], resolve the issuer and inventory 10-K, 10-Q, 8-K, and DEF 14A filings. Retrieve the latest 10-K Item 3 and Item 1A, recent Item 5.02 disclosures, and Form 4 activity. Deliver a chronology with form, filed date, accession, section, and short neutral description. Do not call something enforcement history unless an SEC or issuer source expressly says so. Use entities.resolve, filings.search, sections.get, sections.search, and insiders.list. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve the target to the best-match CIK", exampleArgs: { ticker: "WFC" } },
       { tool: "filings.search", purpose: "12-month filing history", exampleArgs: { ticker: "WFC", limit: 50 } },
@@ -373,12 +412,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "law-firm-deal-disclosure-diligence",
     persona: "law-firm",
     status: "v1",
-    title: "Diligence the latest 8-K material agreement for an M&A target",
+    title: "Material-agreement diligence",
     category: "Deal diligence",
     oneLiner:
       "Pull the most recent 8-K Item 1.01 material agreement and produce a litigation-ready PDF.",
     prompt:
-      "For an M&A target (e.g., MSFT), find the most recent 8-K filing that contains an Item 1.01 (Entry into a Material Definitive Agreement) section. Extract the full Item 1.01 text, render the 8-K as a citation-friendly markdown document, and export it as a PDF for the deal binder. Surface the counterparty, agreement type, and any termination/material-adverse-change clauses identified.",
+      "For [TICKER] and [DATE RANGE], locate 8-K Item 1.01 disclosures and retrieve each matching section and filing metadata. Identify only counterparties, agreement type, dates, and terms actually disclosed; export a selected accession in [PDF OR DOCX] only after confirming it. Return a citation table and unanswered-diligence questions. Do not infer terms from a filing title. Use entities.resolve, filings.search, sections.search, sections.get, and filings.export. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve target to CIK", exampleArgs: { ticker: "MSFT" } },
       { tool: "filings.search", purpose: "Find recent 8-K filings", exampleArgs: { ticker: "MSFT", form: "8-K", limit: 10 } },
@@ -392,12 +431,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "law-firm-proxy-fight-vote-analysis",
     persona: "law-firm",
     status: "v1",
-    title: "Reconstruct proxy fight outcomes for governance precedent",
+    title: "Meeting-vote precedent memo",
     category: "Governance research",
     oneLiner:
       "Pull voting results, comp context, and 8-K Item 5.07 narrative for a contested proxy.",
     prompt:
-      "For a contested proxy fight (e.g., DIS 2023, ETSY 2024), pull the events.voting_results record for the most recent annual meeting, list all proposals and their vote tallies, surface the named-executive comp from the same DEF 14A cycle, and extract the 8-K Item 5.07 (Submission of Matters to a Vote of Security Holders) text. Output a precedent memo with proposal-by-proposal outcomes, comp context, and any director-vote outliers.",
+      "For [TICKER] and meeting date [DATE], retrieve structured voting results, the related Item 5.07 disclosure, and the relevant DEF 14A compensation record. Reconcile proposal labels and vote outcomes to the source filings, noting the meeting type and reporting date. Do not characterize a vote as contested or infer investor intent without filing support. Use entities.resolve, events.voting_results, sections.get, comp.list, and filings.search.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve issuer", exampleArgs: { ticker: "DIS" } },
       { tool: "events.voting_results", purpose: "Latest annual meeting tally", exampleArgs: { ticker: "DIS", meeting_type: "annual", limit: 5 } },
@@ -411,12 +450,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "law-firm-restatement-detection",
     persona: "law-firm",
     status: "v1",
-    title: "Surface restatements and material-weakness disclosures across a watchlist",
+    title: "Amendment and controls queue",
     category: "Disclosure forensics",
     oneLiner:
       "Search a watchlist for 10-K/A restatements + Item 9A material-weakness language.",
     prompt:
-      "For a watchlist of small-cap US issuers, find any 10-K/A (amended annual reports) filed in the past 24 months. For each match, search sections for the keyword 'restatement' and pull Item 9A (Controls and Procedures) text from the underlying 10-K. Surface the type of restatement, the period restated, and any material-weakness disclosure language. Output a ranked table by severity.",
+      "For [TICKER LIST] over [24 MONTHS], find 10-K/A and 10-Q/A filings, search for restatement, revision, and non-reliance language, and retrieve related Item 9A or 4.02 sections. Map original and amended accessions where available. An amendment is not necessarily a restatement; report the issuer's wording and affected periods. Use entities.resolve, filings.search, sections.search, sections.get, and filings.latest. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve each ticker", exampleArgs: { ticker: "MULN" } },
       { tool: "filings.search", purpose: "10-K/A filing history", exampleArgs: { ticker: "MULN", form: "10-K/A", limit: 10 } },
@@ -433,12 +472,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "law-firm-litigation-binder-export",
     persona: "law-firm",
     status: "v1",
-    title: "Export a litigation binder of filings as PDF + DOCX",
+    title: "Filing binder manifest",
     category: "Litigation support",
     oneLiner:
       "Produce a multi-format binder of relevant filings for a litigation matter.",
     prompt:
-      "For a defendant company, pull the most recent 10-K, the most recent two 10-Qs, and any 8-K from the past 12 months that contains an Item 8.01 (Other Events) disclosure. Export each as both PDF (binder copy) and DOCX (markup-ready). Save accession numbers and provenance for the chain-of-custody log.",
+      "For [TICKER], collect the latest 10-K, the latest [N] 10-Qs, and 8-Ks matching [SEARCH TERMS]. Produce a manifest with accession, form, filed date, source URL, and requested export format [PDF/DOCX]. After selecting each manifest row, call `filings.export` with that row's `accessionNumber` and the requested `format` (`pdf` or `docx`); do not use `filings.render` for binder exports. Record hashes or identifiers returned. The output is a research binder, not a chain-of-custody certification. Use entities.resolve, filings.search, filings.latest, and filings.export.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve defendant", exampleArgs: { ticker: "WFC" } },
       { tool: "filings.search", purpose: "Find target filings", exampleArgs: { ticker: "WFC", limit: 20 } },
@@ -452,12 +491,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "law-firm-officer-departure-monitoring",
     persona: "law-firm",
     status: "v1",
-    title: "Track officer departures across a portfolio of insureds",
+    title: "Officer-change disclosure monitor",
     category: "Event monitoring",
     oneLiner:
       "Detect 8-K Item 5.02 officer departures for D&O claim-prevention monitoring.",
     prompt:
-      "For a portfolio of 50 insured public companies, search the past 90 days of 8-K filings for any Item 5.02 (Departure of Directors or Certain Officers) disclosure. For each match, extract the Item 5.02 text, pull the executive's most recent compensation, and list the insider's recent Form 4 trading activity. Output a ranked alert list by claim-trigger likelihood.",
+      "For [TICKER LIST] in [DATE RANGE], locate Item 5.02 disclosures and retrieve the complete section. State the filing's description of appointment, resignation, retirement, termination, or board change; add latest disclosed compensation and Form 4 context only for confirmed people. Do not infer cause or legal significance. Use filings.search, sections.search, sections.get, comp.list, and insiders.list. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "filings.search", purpose: "Recent 8-K filings", exampleArgs: { form: "8-K", limit: 100 } },
       { tool: "sections.search", purpose: "Find Item 5.02 disclosures", exampleArgs: { form: "8-K", q: "resignation appointment", limit: 50 } },
@@ -471,17 +510,17 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "law-firm-insider-trading-pattern-review",
     persona: "law-firm",
     status: "v1",
-    title: "Review insider trading clusters for Section 16 compliance",
+    title: "Section 16 research packet",
     category: "Compliance review",
     oneLiner:
       "Surface insider clusters and cross-reference with comp grants for Section 16 filings.",
     prompt:
-      "For a public company you are advising, list all Form 4 insider transactions in the past 180 days, group by reporting person, surface any clusters of 3+ transactions in any 14-day window, cross-reference with the named-executive comp disclosures (DEF 14A) to identify whether transactions follow scheduled grants, and flag any sales by directors/officers above $1M. Output a Section 16 review packet.",
+      "For [TICKER] in [DATE RANGE], list Form 4 transactions by reporting person, transaction code, date, price, and reported shares. Compare the result with proxy compensation disclosures and relevant Form 4 footnotes where available. Flag transactions for reviewer attention using objective thresholds [THRESHOLD], not a conclusion of compliance or noncompliance. Use entities.resolve, insiders.list, comp.list, filings.search, and sections.get. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve issuer", exampleArgs: { ticker: "ORCL" } },
       { tool: "insiders.list", purpose: "180-day insider transactions", exampleArgs: { ticker: "ORCL", limit: 100 } },
       { tool: "comp.list", purpose: "Named-executive comp + grant schedule", exampleArgs: { ticker: "ORCL", limit: 10 } },
-      { tool: "owners.get_13f", purpose: "Institutional context", exampleArgs: { cik: "0001341439" } },
+      { tool: "filings.search", purpose: "Find the supporting Form 4 filing records", exampleArgs: { ticker: "ORCL", form: "4", limit: 50 } },
     ],
     expectedOutput: "Section 16 review packet with insider clusters + grant alignment + ≥$1M sales flagged.",
     difficulty: "advanced",
@@ -490,12 +529,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "law-firm-disclosure-comparison-peer",
     persona: "law-firm",
     status: "v1",
-    title: "Compare risk-factor disclosures across industry peers",
+    title: "Peer risk-factor comparison",
     category: "Disclosure comparison",
     oneLiner:
       "Benchmark a client's Item 1A risk factors against factor-similar peers.",
     prompt:
-      "For NVDA, identify the top 10 factor-similar US peers, pull each peer's latest Item 1A (Risk Factors) section, and identify any risk-factor topics present in 7+ peers but missing from NVDA's disclosure. Output a comparison matrix + draft risk-factor additions for the next 10-K cycle.",
+      "For [TICKER] and peer list [TICKERS], retrieve each latest 10-K Item 1A and build a topic matrix using explicit source excerpts. You may use factors.related_stocks to suggest candidates, but confirm issuer and fiscal-year comparability first. Report differences in disclosure, not missing legal obligations or proposed drafting. Use entities.resolve, factors.related_stocks, sections.get, sections.search, and filings.search.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve subject and peers", exampleArgs: { ticker: "NVDA" } },
       { tool: "factors.related_stocks", purpose: "Factor-similar peer set", exampleArgs: { symbol: "NVDA", limit: 10 } },
@@ -509,12 +548,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "law-firm-regulatory-search-thematic",
     persona: "law-firm",
     status: "v1",
-    title: "Identify cross-issuer regulatory disclosure trends",
+    title: "Cross-issuer disclosure study",
     category: "Regulatory research",
     oneLiner:
       "Search semantically across filings for an emerging regulatory theme.",
     prompt:
-      "Identify how US public companies are disclosing AI governance and data-privacy risk in their 2024 10-Ks. Run a semantic intelligence query, then for the top 10 returned issuers pull the relevant 10-K sections and the underlying filings (PDF). Output a thematic memo with three representative excerpts and a list of disclosure approaches.",
+      "Research how issuers discuss [TOPIC] in [FORM] filed during [DATE RANGE]. Use intelligence.query to find leads, then retrieve and quote the minimal relevant filing sections for [N] representative issuers. Classify the disclosed approaches and cite every excerpt. The search is not a complete survey and cannot establish market practice. Use intelligence.query, sections.search, sections.get, filings.search, and filings.export. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "intelligence.query", purpose: "Semantic search across 10-Ks", exampleArgs: { query: "AI governance data privacy risk factor 10-K disclosure", lookback: 365 } },
       { tool: "sections.search", purpose: "Find specific risk-factor sections", exampleArgs: { q: "artificial intelligence governance", form: "10-K", limit: 20 } },
@@ -528,12 +567,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "law-firm-going-concern-keyword-scan",
     persona: "law-firm",
     status: "v1",
-    title: "Detect going-concern language across small-cap watchlist",
+    title: "Going-concern disclosure scan",
     category: "Solvency monitoring",
     oneLiner:
       "Sweep watchlist filings for substantial-doubt and going-concern language.",
     prompt:
-      "For a watchlist of US micro-cap issuers, search 10-K and 10-Q filings for any occurrence of 'substantial doubt' or 'going concern' language. For each match, pull the Item 9A (Controls) section and the most recent balance sheet + cash flow snapshots to estimate runway. Output a watchlist alert table ranked by months of runway.",
+      "For [TICKER LIST] and [DATE RANGE], search 10-K and 10-Q filings for going-concern and substantial-doubt language. Retrieve matching sections plus current balance-sheet and cash-flow data, preserving fiscal periods. Report management's stated plans and reported liquidity; do not calculate a solvency opinion or legal conclusion. Use sections.search, sections.get, companies.balance_sheets, companies.cash_flow_statements, and filings.search. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "sections.search", purpose: "Going-concern language search", exampleArgs: { q: "going concern substantial doubt", form: "10-K", limit: 50 } },
       { tool: "sections.get", purpose: "Item 9A internal-controls text", exampleArgs: { ticker: "MULN", form: "10-K", sectionKey: "item_9a" } },
@@ -550,12 +589,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "law-firm-defendant-financial-baseline",
     persona: "law-firm",
     status: "v1",
-    title: "Establish defendant's financial baseline for damages assessment",
+    title: "Financial baseline for expert review",
     category: "Litigation support",
     oneLiner:
       "Pull a financial baseline (revenue, margins, market cap) for damages computation.",
     prompt:
-      "For a defendant company, pull the most recent annual income statement, the latest balance sheet, the trailing-twelve-month revenue trajectory (last 8 quarters), and the latest market snapshot. Output a one-page financial baseline + key ratios for the damages expert.",
+      "For [TICKER] as of [DATE], retrieve latest annual and quarterly financial statements, key ratios, and a current market snapshot. Build a source table that distinguishes reported values from computed ratios and labels each period. Do not supply damages, valuation, causation, or loss opinions. Use entities.resolve, companies.financials, companies.ratios, market.snapshots, and filings.search.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve defendant", exampleArgs: { ticker: "WFC" } },
       { tool: "companies.financials", purpose: "Annual + quarterly fundamentals", exampleArgs: { ticker: "WFC", period: "annual", limit: 3 } },
@@ -569,16 +608,16 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "law-firm-d-and-o-binder",
     persona: "law-firm",
     status: "v1",
-    title: "Compile D&O liability binder for a board",
+    title: "Board disclosure binder",
     category: "D&O preparation",
     oneLiner:
       "Build a board-side D&O binder covering comp, ownership, insider activity.",
     prompt:
-      "For a public-company board, compile a D&O liability binder including: most recent named-executive comp, year-over-year comp change, latest 13F institutional ownership snapshot, and the past 12 months of insider Form 4 transactions. Add a one-page narrative on governance posture.",
+      "For [TICKER], assemble the latest proxy compensation record, prior-year compensation comparison, latest available institutional-holder snapshot, and [12 MONTHS] of Form 4 transactions. Deliver a neutral governance binder with filing/report dates and sources, keeping delayed 13F data separate from issuer disclosures. Use `owners.institutional_holders` with the issuer ticker or issuer CIK; the manager-specific 13F holdings tool requires a named manager CIK. Do not assess fiduciary duty, board conduct, or D&O coverage. Use comp.list, comp.compare, owners.institutional_holders, insiders.list, and filings.search. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "comp.list", purpose: "Latest comp disclosures", exampleArgs: { ticker: "META", limit: 10 } },
       { tool: "comp.compare", purpose: "Year-over-year comp comparison", exampleArgs: { ticker: "META", limit: 10 } },
-      { tool: "owners.get_13f", purpose: "Institutional ownership snapshot", exampleArgs: { cik: "0001326801" } },
+      { tool: "owners.institutional_holders", purpose: "Institutional-holder snapshot for the issuer", exampleArgs: { ticker: "META", limit: 20 } },
       { tool: "insiders.list", purpose: "12-month Form 4 history", exampleArgs: { ticker: "META", limit: 50 } },
     ],
     expectedOutput: "D&O binder (markdown) + 1-page governance narrative.",
@@ -592,12 +631,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "pr-firm-voting-results-narrative",
     persona: "pr-firm",
     status: "v1",
-    title: "Generate a proxy-season vote-results narrative for client briefings",
+    title: "Vote-results client brief",
     category: "Proxy season",
     oneLiner:
       "Pull voting results, comp context, and peer comparison for a proxy-season recap.",
     prompt:
-      "For a corporate IR client, pull the most recent annual meeting voting results, list every proposal with vote tallies and percentages, surface the named-executive comp context, and identify the top 5 factor-similar peer companies whose annual meetings ran in the same window. Output a recap memo + comparative table for the IR client briefing.",
+      "For [TICKER] and meeting date [DATE], retrieve voting results, the related 8-K Item 5.07 section, and the current proxy compensation record. Draft a factual briefing with proposal outcomes, disclosed vote counts, and source citations. Do not add sentiment, causes, or a narrative not supported by the filing. Use events.voting_results, sections.get, comp.list, filings.search, and entities.resolve.",
     expectedToolChain: [
       { tool: "events.voting_results", purpose: "Voting results structured pull", exampleArgs: { ticker: "DIS", meeting_type: "annual", limit: 5 } },
       { tool: "comp.list", purpose: "Named-executive comp context", exampleArgs: { ticker: "DIS", limit: 10 } },
@@ -611,12 +650,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "pr-firm-8k-material-event-monitoring",
     persona: "pr-firm",
     status: "v1",
-    title: "Monitor 8-K material events across a portfolio of clients",
+    title: "Material-event monitoring digest",
     category: "Event monitoring",
     oneLiner:
       "Sweep client portfolio 8-K filings for material-event disclosures.",
     prompt:
-      "For a portfolio of 25 PR clients, sweep the past 30 days of 8-K filings, search for any Item 8.01 (Other Events) disclosure that references a 'material' announcement, and pull the full text of each match. Output a daily monitoring digest with one paragraph per event and a client-comms scenario.",
+      "For [TICKER LIST] during [DATE RANGE], inventory 8-K filings and retrieve sections for items [ITEM LIST]. Return a client-by-client digest with filing date, accession, disclosed event, and a linkable source reference. Label unknowns and do not call an item material beyond the issuer's filing. Use filings.search, sections.search, sections.get, filings.latest, and entities.resolve. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve each client to best-match CIK", exampleArgs: { ticker: "DIS" } },
       { tool: "filings.search", purpose: "Recent 8-K filings", exampleArgs: { ticker: "DIS", form: "8-K", limit: 20 } },
@@ -630,12 +669,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "pr-firm-executive-transition-detection",
     persona: "pr-firm",
     status: "v1",
-    title: "Detect executive transitions for crisis-comms prep",
+    title: "Executive-transition briefing",
     category: "Crisis comms",
     oneLiner:
       "Surface 8-K Item 5.02 officer transitions and pull supporting comp + insider context.",
     prompt:
-      "Sweep the past 7 days of 8-K filings for any Item 5.02 (Departure of Directors or Certain Officers) disclosure. For each match, extract the full text, identify the officer's most recent compensation, and check Form 4 trading activity in the past 30 days. Output a crisis-comms prep packet ranked by reputational risk.",
+      "For [TICKER] in [DATE RANGE], retrieve Item 5.02 disclosures, relevant Form 4 activity, and current proxy compensation context. Produce a facts-first briefing: named person, disclosed role change, effective date, and source. Do not speculate about motive, succession, or market reaction. Use filings.search, sections.search, sections.get, insiders.list, and comp.list. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "filings.search", purpose: "Recent 8-K filings", exampleArgs: { form: "8-K", limit: 50 } },
       { tool: "sections.get", purpose: "Item 5.02 text per match", exampleArgs: { ticker: "DIS", form: "8-K", sectionKey: "item_5_02" } },
@@ -649,12 +688,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "pr-firm-peer-comparison-context",
     persona: "pr-firm",
     status: "v1",
-    title: "Build peer-comparison context for client crisis comms",
+    title: "Peer event context",
     category: "Peer benchmarking",
     oneLiner:
       "Compare a client's financial posture against factor-similar peers for crisis prep.",
     prompt:
-      "For an IR client (e.g., NFLX), generate the top 10 factor-similar peers, pull each peer's most recent annual financials and named-executive comp, and produce a comparison table. Output a crisis-comms briefing with three messages framed by where the client's metrics sit vs the peer cohort.",
+      "For [TICKER] and [PEER LIST], retrieve current financial statements and recent 8-K filings for [TOPIC]. Provide a dated comparison table with each issuer's reported facts and citations. A factor-similar cohort is a research aid, not a communications benchmark. Use entities.resolve, factors.related_stocks, companies.financials, filings.search, and sections.search.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve client", exampleArgs: { ticker: "NFLX" } },
       { tool: "factors.related_stocks", purpose: "Factor-similar peer set", exampleArgs: { symbol: "NFLX", limit: 10 } },
@@ -668,12 +707,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "pr-firm-quiet-period-trading-watch",
     persona: "pr-firm",
     status: "v1",
-    title: "Audit insider trading during client quiet periods",
+    title: "Quiet-period transaction facts",
     category: "Compliance comms",
     oneLiner:
       "Surface insider trades that occurred during quiet-period windows.",
     prompt:
-      "For a corporate client, list all Form 4 insider transactions in the past 90 days, identify any that occurred within 14 days of an earnings announcement (quiet period), and surface any 'trading window' or 'quiet period' language in recent filings. Output a comms advisory + compliance flags.",
+      "For [TICKER] and internal review window [START]-[END], list reported Form 4 transactions and current compensation disclosures. Provide reporting person, transaction code, transaction date, and filed date, with source references. Do not decide whether a transaction violates a policy or securities law. Use insiders.list, comp.list, filings.search, entities.resolve, and sections.get. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve client", exampleArgs: { ticker: "NFLX" } },
       { tool: "insiders.list", purpose: "90-day Form 4 transactions", exampleArgs: { ticker: "NFLX", limit: 50 } },
@@ -687,12 +726,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "pr-firm-acquisition-announcement-context",
     persona: "pr-firm",
     status: "v1",
-    title: "Prep acquisition-announcement materials with deal-context lookup",
+    title: "Acquisition announcement context",
     category: "Deal comms",
     oneLiner:
       "Pull deal-context filings, comp impact, and entity profile for an acquisition press release.",
     prompt:
-      "For an upcoming acquisition announcement, pull the most recent 8-K Item 1.01 (Material Definitive Agreement) for the acquirer, extract the deal terms, resolve the target entity, and pull comp comparison context for the acquirer's executives. Output a press-release ready brief with deal-terms summary, target profile, and exec-comp implications.",
+      "For [TICKER] and proposed announcement date [DATE], find recent 8-K Item 1.01, 2.01, and 8.01 disclosures and retrieve the relevant sections. Create a facts-only source sheet of disclosed parties, timing, consideration, and stated rationale. Do not draft a release or fill gaps with external reporting. Use filings.search, sections.search, sections.get, filings.latest, and entities.resolve.",
     expectedToolChain: [
       { tool: "filings.search", purpose: "Find recent 8-K Item 1.01 filings", exampleArgs: { form: "8-K", q: "material agreement", limit: 10 } },
       { tool: "sections.get", purpose: "Item 1.01 deal terms", exampleArgs: { ticker: "MSFT", form: "8-K", sectionKey: "item_1_01" } },
@@ -706,12 +745,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "pr-firm-press-release-disclosure-cross-check",
     persona: "pr-firm",
     status: "v1",
-    title: "Cross-check press release against latest 8-K Reg FD filing",
+    title: "Release-to-filing cross-check",
     category: "Reg FD compliance",
     oneLiner:
       "Validate that draft press release content aligns with latest Reg FD 8-K disclosure.",
     prompt:
-      "For a client's draft press release, pull the most recent 8-K filing that includes an Item 7.01 (Reg FD Disclosure) section, render the 8-K to markdown, run a semantic comparison against the press release content, and surface any material claim in the draft that lacks 8-K corroboration. Output a Reg FD compliance review.",
+      "Compare this draft text: [PASTE TEXT] against [TICKER]'s latest 8-K and 10-Q/10-K sections on [TOPIC]. List statements that are directly supported, unsupported, or need a source check, with filing citations. This is a factual comparison only, not a Regulation FD or legal compliance opinion. Use filings.search, filings.latest, sections.search, sections.get, and filings.render.",
     expectedToolChain: [
       { tool: "filings.search", purpose: "Find recent 8-K Item 7.01 filings", exampleArgs: { ticker: "DIS", form: "8-K", limit: 10 } },
       { tool: "sections.get", purpose: "Item 7.01 Reg FD text", exampleArgs: { ticker: "DIS", form: "8-K", sectionKey: "item_7_01" } },
@@ -725,12 +764,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "pr-firm-results-announcement-prep",
     persona: "pr-firm",
     status: "v1",
-    title: "Build earnings-results announcement materials",
+    title: "Earnings announcement source pack",
     category: "Earnings comms",
     oneLiner:
       "Pull results, trend context, and MD&A for an earnings press release.",
     prompt:
-      "For an upcoming earnings announcement (e.g., AAPL), pull the most recent four quarters of income statement and the latest 8-K Item 2.02 (Results of Operations and Financial Condition) section. Output a press-release outline grounded in the reported trend, three supporting bullets, and a draft management quote pulled from the 8-K narrative.",
+      "For [TICKER] and quarter [FISCAL QUARTER], retrieve the relevant income statement, 10-Q MD&A, and earnings-related 8-K. Make a table of reported revenue, margins, cash-flow measures, and management discussion with fiscal labels. Do not write forward-looking language or reconcile non-GAAP measures unless the issuer disclosure supplies it. Use companies.income_statements, companies.cash_flow_statements, sections.get, filings.search, and entities.resolve.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve issuer", exampleArgs: { ticker: "AAPL" } },
       { tool: "companies.income_statements", purpose: "Recent quarterly income", exampleArgs: { ticker: "AAPL", period: "quarterly", limit: 4 } },
@@ -743,12 +782,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "pr-firm-shareholder-meeting-narrative",
     persona: "pr-firm",
     status: "v1",
-    title: "Reconstruct shareholder meeting narrative from voting record",
+    title: "Shareholder-meeting narrative record",
     category: "Proxy season",
     oneLiner:
       "Build a post-meeting narrative for IR's annual letter using voting results + comp + 8-K text.",
     prompt:
-      "For a corporate IR client's most recent shareholder meeting, pull the structured voting results, named-executive comp from the same DEF 14A cycle, and the 8-K Item 5.07 (Submission of Matters to a Vote of Security Holders) text. Cross-reference with intelligence.query for any analyst or media commentary in the same window. Output a 1-page post-meeting narrative for the annual letter.",
+      "For [TICKER]'s [DATE] meeting, reconcile structured voting results, Item 5.07, and the applicable DEF 14A. Prepare a concise outcome record with proposal titles, reported vote outcomes, and citations. Do not claim shareholder sentiment beyond the disclosed vote. Use events.voting_results, sections.get, filings.search, comp.list, and entities.resolve.",
     expectedToolChain: [
       { tool: "events.voting_results", purpose: "Structured voting outcomes", exampleArgs: { ticker: "DIS", meeting_type: "annual", limit: 5 } },
       { tool: "comp.list", purpose: "Same-cycle comp", exampleArgs: { ticker: "DIS", limit: 10 } },
@@ -762,17 +801,17 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "pr-firm-board-composition-change",
     persona: "pr-firm",
     status: "v1",
-    title: "Track board composition changes across a watchlist",
+    title: "Board-change watchlist",
     category: "Governance comms",
     oneLiner:
       "Detect 8-K Item 5.02 board changes and pull supporting comp + ownership context.",
     prompt:
-      "For a watchlist of 25 corporate clients, sweep the past 60 days of 8-K filings for Item 5.02 (officer/director departure or appointment) disclosures, extract the full text, identify the new appointee or departing director, pull comp comparison context, and check institutional ownership snapshot. Output a governance-comms digest.",
+      "For [TICKER LIST] in [DATE RANGE], retrieve Item 5.02 disclosures and list appointments and departures exactly as filed. Add current compensation and institutional-holder data only as dated context. Use `owners.institutional_holders` with each issuer ticker or issuer CIK; do not pass an issuer identifier to the manager-specific 13F holdings tool, which requires a manager CIK. Do not infer governance quality or a rationale for the change. Use filings.search, sections.search, sections.get, comp.compare, and owners.institutional_holders. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "filings.search", purpose: "Recent 8-K filings", exampleArgs: { form: "8-K", limit: 100 } },
       { tool: "sections.get", purpose: "Item 5.02 text per match", exampleArgs: { ticker: "DIS", form: "8-K", sectionKey: "item_5_02" } },
       { tool: "comp.compare", purpose: "Comp comparison context", exampleArgs: { ticker: "DIS", limit: 10 } },
-      { tool: "owners.get_13f", purpose: "Institutional ownership snapshot", exampleArgs: { cik: "0001744489" } },
+      { tool: "owners.institutional_holders", purpose: "Institutional-holder snapshot for the issuer", exampleArgs: { ticker: "DIS", limit: 20 } },
     ],
     expectedOutput: "Governance-comms digest with appointee profiles + comp context per match.",
     difficulty: "intermediate",
@@ -781,12 +820,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "pr-firm-segment-disclosure-narrative",
     persona: "pr-firm",
     status: "v1",
-    title: "Build segment-disclosure narrative for IR roadshow prep",
+    title: "Segment roadshow source note",
     category: "Roadshow prep",
     oneLiner:
       "Walk segment footnotes + segment income for an IR roadshow narrative.",
     prompt:
-      "For an IR client (diversified issuer), pull the segment-disclosure footnote from the latest 10-K, align with the latest annual segment-level income statement, and surface the segment with the largest absolute revenue growth and the segment with the largest margin compression. Output a roadshow narrative with three segment-level talking points.",
+      "For [TICKER], retrieve the latest segment footnote, annual income statement, and Item 8 financial-statement section. Build three discussion points that restate disclosed segment trends and label their fiscal period. Do not create segment margins or future claims not in the filing. Use intelligence.footnotes, companies.income_statements, sections.get, filings.search, and entities.resolve.",
     expectedToolChain: [
       { tool: "intelligence.footnotes", purpose: "Segment-disclosure footnote", exampleArgs: { ticker: "AMZN", form: "10-K", topics: ["segment"] } },
       { tool: "companies.income_statements", purpose: "Segmented income statement", exampleArgs: { ticker: "AMZN", period: "annual", limit: 3 } },
@@ -800,12 +839,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "pr-firm-stakeholder-sentiment-pulse",
     persona: "pr-firm",
     status: "v1",
-    title: "Pulse stakeholder sentiment via factor cohort + 13F + intelligence",
+    title: "Stakeholder-context briefing",
     category: "Sentiment monitoring",
     oneLiner:
       "Triangulate stakeholder sentiment using factor peers + ownership rotation + intelligence query.",
     prompt:
-      "For a corporate IR client, surface a sentiment pulse: build the factor-similar peer set, pull quarter-over-quarter institutional rotation across the cohort, and run a semantic intelligence query for analyst sentiment in the past 60 days. Output a 1-page stakeholder-sentiment briefing with three takeaways.",
+      "For [TICKER], create a dated context brief from factor-similar peers, intelligence-query leads for [TOPIC], and the latest reported changes for named 13F managers [13F MANAGER CIK LIST]. `owners.compare_13f` requires each manager CIK; use `owners.institutional_holders` first when you need to discover managers for an issuer. Separate analytics and delayed ownership reports from primary filing evidence. Do not present the output as real-time sentiment, media monitoring, or investor intent. Use entities.resolve, factors.related_stocks, owners.compare_13f, intelligence.query, and filings.search.",
     expectedToolChain: [
       { tool: "entities.resolve", purpose: "Resolve client", exampleArgs: { ticker: "DIS" } },
       { tool: "factors.related_stocks", purpose: "Factor-similar peer cohort", exampleArgs: { symbol: "DIS", limit: 10 } },
@@ -823,12 +862,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "sophisticated-investor-equity-comp-burn-rate",
     persona: "sophisticated-investor",
     status: "v1",
-    title: "Equity comp burn-rate forensics",
+    title: "Equity-compensation dilution review",
     category: "Equity comp forensics",
     oneLiner:
       "Walk equity comp grants vs cash flow vs shares outstanding to surface dilution-via-comp risk.",
     prompt:
-      "For a high-growth issuer with heavy equity-comp use (e.g., SNOW), pull the latest named-executive comp, the trailing 5 years of cash flow statements (focus on share-based compensation), the income statement (for share-based-comp expense line), and the relevant XBRL fact (ShareBasedCompensation tag). Compute equity-comp burn rate as a fraction of revenue and as shares-issued-as-comp / shares-outstanding. Output a forensic memo.",
+      "Test the equity-compensation dilution hypothesis for [TICKER] across fiscal years [FY FROM]-[FY TO]. Retrieve cash-flow statements, income statements, the latest proxy compensation disclosures, and XBRL facts for share-based compensation and weighted-average shares when available. Show the reported values by period, define every calculation, and distinguish expense, grants, and share count. Cite form, fiscal period, accession, and fact tag. Do not invent a burn-rate denominator when the facts are not comparable or treat accounting expense as cash dilution. Use companies.cash_flow_statements, companies.income_statements, comp.list, facts.get, and sections.get. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "comp.list", purpose: "Named-executive comp baseline", exampleArgs: { ticker: "SNOW", limit: 10 } },
       { tool: "companies.cash_flow_statements", purpose: "5-year share-based comp cash flow line", exampleArgs: { ticker: "SNOW", period: "annual", limit: 5 } },
@@ -842,12 +881,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "sophisticated-investor-debt-covenant-headroom",
     persona: "sophisticated-investor",
     status: "v1",
-    title: "Debt covenant headroom check",
+    title: "Covenant and liquidity reading",
     category: "Credit forensics",
     oneLiner:
       "Pull debt-covenant footnote + balance sheet to estimate covenant headroom.",
     prompt:
-      "For a leveraged issuer (e.g., HTZ), pull the debt-covenant footnote (intelligence.footnotes topic=debt_covenant), the latest balance sheet (focus on debt + cash), and the latest ratios (leverage, interest coverage). Cross-reference with the MD&A (Item 7) for any covenant-relief or amendment language. Output a covenant headroom estimate (% of trigger) + 3-paragraph risk summary.",
+      "For [TICKER] and its latest [10-K OR 10-Q], retrieve debt-covenant footnotes, the balance sheet, cash-flow statement, and MD&A. Extract only disclosed covenant tests, thresholds, amendments, waivers, and stated compliance status. Build a liquidity table from reported cash, debt, and operating cash flow, with period labels. If a covenant ratio cannot be reconstructed from disclosed definitions, say so rather than estimating headroom. Cite each result to its filing source. Use intelligence.footnotes, companies.balance_sheets, companies.cash_flow_statements, sections.get, and companies.ratios.",
     expectedToolChain: [
       { tool: "intelligence.footnotes", purpose: "Debt-covenant footnote text", exampleArgs: { ticker: "HTZ", form: "10-K", topics: ["debt_covenant"] } },
       { tool: "companies.balance_sheets", purpose: "Debt + cash snapshot", exampleArgs: { ticker: "HTZ", period: "quarterly", limit: 1 } },
@@ -861,12 +900,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "sophisticated-investor-tax-position-stress",
     persona: "sophisticated-investor",
     status: "v1",
-    title: "Stress-test uncertain tax positions",
+    title: "Tax-position sensitivity",
     category: "Tax forensics",
     oneLiner:
       "Surface uncertain tax positions and stress-test against income statement.",
     prompt:
-      "For a multinational (e.g., GOOGL), pull the tax footnote (intelligence.footnotes topic=tax), the deferred-tax-asset XBRL fact, the trailing 3 years of income statement (focus on effective tax rate), and the relevant 10-K MD&A passages. Stress-test scenarios where deferred-tax assets are written down by 25/50/100%. Output a tax forensics memo + scenario impact table.",
+      "Review [TICKER]'s tax disclosures for fiscal years [FY FROM]-[FY TO]. Retrieve the tax footnote, relevant deferred-tax XBRL facts, income statements, and MD&A. List the reported uncertain-tax-position and valuation-allowance disclosures separately. Model [25/50/100]% changes only as an explicitly hypothetical sensitivity, using the reported base amount and showing the arithmetic. Do not present a scenario as a forecast or assume a tax asset is collectible. Cite form, period, accession, footnote topic, and fact tag. Use intelligence.footnotes, facts.get, companies.income_statements, and sections.get. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "intelligence.footnotes", purpose: "Tax footnote text", exampleArgs: { ticker: "GOOGL", form: "10-K", topics: ["tax"] } },
       { tool: "facts.get", purpose: "DeferredTaxAssetsNet XBRL fact", exampleArgs: { ticker: "GOOGL", tag: "DeferredTaxAssetsNet", form: "10-K" } },
@@ -880,12 +919,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "sophisticated-investor-revenue-recognition-forensics",
     persona: "sophisticated-investor",
     status: "v1",
-    title: "Revenue-recognition forensics on growth narratives",
+    title: "Revenue-quality cross-check",
     category: "Revenue forensics",
     oneLiner:
       "Compare deferred revenue + revenue footnote + income statement for revenue-recognition aggression.",
     prompt:
-      "For a high-growth SaaS issuer (e.g., NOW), pull the revenue-recognition footnote (intelligence.footnotes topic=revenue), the deferred-revenue XBRL fact across 5 years, the trailing 5-year income statement, and the MD&A passages. Surface any divergence between billings growth, deferred revenue, and recognized revenue. Output a forensic memo with a billings-vs-revenue ratio table.",
+      "For [TICKER], compare reported revenue, deferred-revenue facts, and the revenue-recognition footnote over [FY FROM]-[FY TO]. Retrieve MD&A passages that explain material period changes. Produce a period-aligned table and identify disclosed changes in contract timing, performance obligations, or policy. Mark any ratio as a researcher-created diagnostic, not a GAAP metric. Do not call a divergence aggressive accounting without a source-supported explanation. Cite each number and excerpt to the underlying filing. Use intelligence.footnotes, facts.get, companies.income_statements, sections.get, and filings.search. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "intelligence.footnotes", purpose: "Revenue-recognition footnote text", exampleArgs: { ticker: "NOW", form: "10-K", topics: ["revenue"] } },
       { tool: "facts.get", purpose: "DeferredRevenue XBRL fact 5-year", exampleArgs: { ticker: "NOW", tag: "DeferredRevenueCurrent", form: "10-K" } },
@@ -899,15 +938,16 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "sophisticated-investor-13f-divergence-thesis",
     persona: "sophisticated-investor",
     status: "v1",
-    title: "Spot smart-money divergence for thesis validation",
+    title: "Ownership disagreement map",
     category: "Smart-money signals",
     oneLiner:
       "Surface 13F filers diverging on a name and cross-reference with insider trades + comp.",
     prompt:
-      "For a contested name (e.g., GME), pull the latest 13F snapshot for the top 20 institutional holders, compare quarter-over-quarter, identify the 5 holders making the largest position increases AND the 5 making the largest decreases, then pull insider Form 4 history and comp comparison. Output a divergence memo for short/long thesis validation.",
+      "For [TICKER], first use `owners.institutional_holders` to identify reported institutional holders, then compare the latest two 13F reporting periods only for selected managers [13F MANAGER CIK LIST]. `owners.get_13f` and `owners.compare_13f` require a manager CIK, not the issuer ticker or issuer CIK. Name the largest reported increases and decreases, their reporting dates, and the insiders' transaction codes and values. Keep institutional holdings and insider activity in separate columns; they have different reporting timing and do not show intent. Return a hypothesis ledger with evidence for, evidence against, and unresolved questions. Use owners.institutional_holders, owners.get_13f, owners.compare_13f, insiders.list, entities.resolve, and comp.compare.",
     expectedToolChain: [
-      { tool: "owners.get_13f", purpose: "Top-20 institutional snapshot", exampleArgs: { cik: "0001326380" } },
-      { tool: "owners.compare_13f", purpose: "Q-over-Q rotation", exampleArgs: { cik: "0001326380" } },
+      { tool: "owners.institutional_holders", purpose: "Reported institutional holders for the issuer", exampleArgs: { ticker: "GME", limit: 20 } },
+      { tool: "owners.get_13f", purpose: "Holdings for a selected 13F manager", exampleArgs: { cik: "0001067983" } },
+      { tool: "owners.compare_13f", purpose: "Quarter-over-quarter delta for that manager", exampleArgs: { cik: "0001067983" } },
       { tool: "insiders.list", purpose: "Insider Form 4 history", exampleArgs: { ticker: "GME", limit: 50 } },
       { tool: "comp.compare", purpose: "Comp comparison for executive alignment", exampleArgs: { ticker: "GME", limit: 10 } },
     ],
@@ -918,12 +958,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "sophisticated-investor-going-concern-sweep",
     persona: "sophisticated-investor",
     status: "v1",
-    title: "Sweep small-cap watchlist for going-concern language",
+    title: "Going-concern research queue",
     category: "Solvency forensics",
     oneLiner:
       "Find substantial-doubt and going-concern language across small caps and estimate runway.",
     prompt:
-      "For a watchlist of 100 US micro-caps, search 10-K and 10-Q filings for 'going concern' or 'substantial doubt' language. For each match, pull Item 9A (Controls), the latest balance sheet, and the cash flow statement to estimate runway. Output a runway-ranked alert table with one-line risk summary per name.",
+      "For [TICKER LIST] in [DATE RANGE], search 10-K and 10-Q sections for \"going concern\" and \"substantial doubt.\" Retrieve the matching disclosure, current balance sheet, and recent cash-flow statements. Make a source queue showing reported cash, recent operating cash flow, and management's stated plan. If you calculate a simple runway proxy, label assumptions and do not treat it as liquidity guidance. Cite form, period, accession, and section. Use sections.search, sections.get, companies.balance_sheets, companies.cash_flow_statements, and filings.search. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "sections.search", purpose: "Going-concern keyword sweep", exampleArgs: { q: "going concern substantial doubt", form: "10-K", limit: 50 } },
       { tool: "sections.get", purpose: "Item 9A internal-controls text", exampleArgs: { ticker: "MULN", form: "10-K", sectionKey: "item_9a" } },
@@ -937,12 +977,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "sophisticated-investor-lease-obligations-forensics",
     persona: "sophisticated-investor",
     status: "v1",
-    title: "Lease-obligation off-balance-sheet forensics",
+    title: "Lease-adjusted leverage worksheet",
     category: "Off-balance-sheet",
     oneLiner:
       "Walk lease footnote + balance sheet + XBRL lease tags to estimate true leverage.",
     prompt:
-      "For a lease-heavy retailer (e.g., M), pull the lease footnote (intelligence.footnotes topic=lease), the operating-lease-liability XBRL fact, the latest balance sheet, and the cash flow statement. Compute adjusted leverage including capitalized operating leases at 8x rent. Output a lease-adjusted leverage memo + comparison table vs reported leverage.",
+      "For [TICKER], retrieve lease footnotes, lease-liability facts, the latest balance sheet, and cash-flow statement. Reconcile the reported lease liability to the disclosure before calculating any researcher-defined adjusted leverage measure. State the capitalization multiple [MULTIPLE] and why it is an assumption; provide reported leverage beside the adjusted view. Do not imply that the issuer reports the adjusted result. Cite all inputs to form, period, accession, footnote, or fact tag. Use intelligence.footnotes, facts.get, companies.balance_sheets, companies.cash_flow_statements, and companies.ratios.",
     expectedToolChain: [
       { tool: "intelligence.footnotes", purpose: "Lease footnote text", exampleArgs: { ticker: "M", form: "10-K", topics: ["lease"] } },
       { tool: "facts.get", purpose: "OperatingLeaseLiability XBRL fact", exampleArgs: { ticker: "M", tag: "OperatingLeaseLiabilityCurrent", form: "10-K" } },
@@ -956,12 +996,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "sophisticated-investor-segment-aggregation-forensics",
     persona: "sophisticated-investor",
     status: "v1",
-    title: "Segment-disclosure forensics on diversified issuers",
+    title: "Segment-disclosure challenge",
     category: "Segment forensics",
     oneLiner:
       "Surface segment-aggregation choices and compare to peer disclosure granularity.",
     prompt:
-      "For a diversified issuer (e.g., GE), pull the segment-disclosure footnote and segment income statement. Compare segment count and revenue concentration to factor-similar peers. Identify any segment that contributes more than 50% of revenue but less than 30% of segment-level disclosure. Output a segment-aggregation forensic memo.",
+      "For [TICKER], retrieve the latest segment footnote, income statement, and financial-statement section. Propose up to [10] factor-similar peers, then compare only their disclosed segment count, revenue concentration, and stated reporting structure. Separate reported segments from an analyst's preferred disaggregation. Output a citation table and a list of questions the filing does and does not answer. Do not assert concealment from aggregation alone. Use intelligence.footnotes, companies.income_statements, sections.get, factors.related_stocks, and entities.resolve.",
     expectedToolChain: [
       { tool: "intelligence.footnotes", purpose: "Segment-disclosure footnote", exampleArgs: { ticker: "GE", form: "10-K", topics: ["segment"] } },
       { tool: "companies.income_statements", purpose: "Segmented income", exampleArgs: { ticker: "GE", period: "annual", limit: 3 } },
@@ -1001,11 +1041,11 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     oneLiner:
       "Detect ATM program issuance velocity and cross-reference with insider trading.",
     prompt:
-      "For an issuer with an active ATM (at-the-market) program, pull dilution.events for the latest ATM issuance, dilution.cash_position for runway impact, owners.compare_13f for institutional response, and insiders.list for any insider trading around the ATM dates. Output a dilution-velocity dashboard.",
+      "For an issuer with an active ATM (at-the-market) program, pull dilution.events for the latest ATM issuance, dilution.cash_position for runway impact, and insiders.list for any insider trading around the ATM dates. For ownership changes, first identify institutional holders for the issuer, then use owners.compare_13f only with each selected [13F MANAGER CIK]. Output a dilution-velocity dashboard.",
     expectedToolChain: [
       { tool: "dilution.events", purpose: "ATM issuance events (FUTURE)", exampleArgs: { ticker: "MULN" } },
       { tool: "dilution.cash_position", purpose: "Runway impact (FUTURE)", exampleArgs: { ticker: "MULN" } },
-      { tool: "owners.compare_13f", purpose: "Institutional response", exampleArgs: { cik: "0001770787" } },
+      { tool: "owners.compare_13f", purpose: "Institutional response for a selected 13F manager", exampleArgs: { cik: "0001067983" } },
       { tool: "insiders.list", purpose: "Insider trades around ATM dates", exampleArgs: { ticker: "MULN", limit: 20 } },
     ],
     expectedOutput: "Dilution-velocity dashboard.",
@@ -1060,15 +1100,15 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "insurance-d-and-o-underwriting-profile",
     persona: "insurance",
     status: "v1",
-    title: "Build a D&O underwriting profile for a renewal candidate",
+    title: "D&O renewal profile",
     category: "D&O underwriting",
     oneLiner:
       "Compile board comp, ownership concentration, and insider activity for D&O risk pricing.",
     prompt:
-      "You are a risk assessment agent with access to SEC API. For any company under review, check enforcement history, pull the company intelligence bundle for financial health, review executive compensation structures, and extract auditor opinion and risk-factor sections from the latest 10-K. Flag restatements, auditor changes, and enforcement actions as high-priority findings. Always include requestId references for compliance documentation.",
+      "Build a D&O renewal research note for [TICKER] as of [DATE]. Resolve the issuer, retrieve its latest 10-K and relevant 8-Ks, then read Item 1A risk factors and Item 7 MD&A. Add current named-executive compensation, recent Form 4 activity, and the latest available institutional-holder context. Use `owners.institutional_holders` with the issuer ticker or issuer CIK; the manager-specific 13F holdings tool requires a named manager CIK. Separate facts from underwriting interpretation. Cite each finding with form, filing date, accession number, and section or transaction reference. Flag only disclosed auditor changes, restatement language, control weaknesses, executive departures, or unusually concentrated ownership; do not infer fraud, claim likelihood, or coverage. Use entities.resolve, filings.search, sections.get, comp.list, insiders.list, and owners.institutional_holders.",
     expectedToolChain: [
       { tool: "comp.list", purpose: "Named-executive comp baseline", exampleArgs: { ticker: "WFC", limit: 10 } },
-      { tool: "owners.get_13f", purpose: "Ownership-concentration snapshot", exampleArgs: { cik: "0000072971" } },
+      { tool: "owners.institutional_holders", purpose: "Institutional-holder context for the issuer", exampleArgs: { ticker: "WFC", limit: 20 } },
       { tool: "insiders.list", purpose: "Officer/director Form 4 history", exampleArgs: { ticker: "WFC", limit: 50 } },
       { tool: "comp.compare", purpose: "Year-over-year comp comparison", exampleArgs: { ticker: "WFC", limit: 10 } },
     ],
@@ -1082,12 +1122,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "insurance-auditor-change-keyword-scan",
     persona: "insurance",
     status: "v1",
-    title: "Scan watchlist for auditor changes via Item 4.01 keyword search",
+    title: "Auditor-change review",
     category: "Auditor monitoring",
     oneLiner:
       "Detect auditor changes by keyword-searching 8-K Item 4.01 disclosures.",
     prompt:
-      "For a watchlist of 50 insureds, search the past 90 days of 8-K filings for any 'Item 4.01' or 'Changes in Registrant's Certifying Accountant' language. For each match, extract the Item 4.01 text, identify the predecessor and successor auditor, and run a semantic intelligence query for any related material-weakness disclosures. Output a watchlist alert ranked by claim-trigger likelihood.",
+      "For [TICKER LIST] during [START DATE] through [END DATE], search 8-K sections for Item 4.01 and phrases such as \"certifying accountant.\" For each candidate, retrieve the issuer's Item 4.01 section and report the predecessor, successor, stated reason, disagreements if disclosed, and filing accession. Search the same issuer's latest 10-K and 10-K/A for material-weakness language. Deliver a triage table with a direct filing link or accession for every row. This is a keyword-led disclosure review: absence of a result is not proof that no auditor event occurred. Use sections.search, sections.get, filings.search, and intelligence.query only as a secondary lead. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "sections.search", purpose: "Item 4.01 keyword search", exampleArgs: { form: "8-K", q: "Item 4.01 auditor change Changes in Registrant Certifying Accountant", limit: 50 } },
       { tool: "sections.get", purpose: "Item 4.01 text per match", exampleArgs: { ticker: "WFC", form: "8-K", sectionKey: "item_4_01" } },
@@ -1104,12 +1144,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "insurance-material-weakness-semantic-scan",
     persona: "insurance",
     status: "v1",
-    title: "Semantic scan for material-weakness disclosures",
+    title: "Internal-control disclosure sweep",
     category: "Internal-control risk",
     oneLiner:
       "Use semantic intelligence query to find material-weakness language across recent filings.",
     prompt:
-      "For a renewal book of insureds, run a semantic intelligence query for 'material weakness internal control' language in the past 12 months of 10-K filings. For each match, search for related sections, extract Item 9A (Controls and Procedures), and pull the latest 10-K/A filings (amended annual reports). Output a material-weakness watchlist with severity ranking.",
+      "Review [TICKER LIST] for disclosures filed in the last [12 MONTHS]. Search 10-K and 10-Q sections for \"material weakness\" and \"internal control over financial reporting,\" then retrieve the applicable control discussion from the source filing. Check for amended annual reports and summarize remediation language, affected period, and whether management states the weakness remains open. Output a source table followed by a short issuer-by-issuer note. Quote only the minimum necessary text and attach form, fiscal period, filing date, accession, and section key. Do not convert disclosure language into a severity score or an audit opinion. Use sections.search, sections.get, filings.search, and companies.overview. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "intelligence.query", purpose: "Semantic material-weakness signal", exampleArgs: { query: "material weakness internal control over financial reporting", lookback: 365 } },
       { tool: "sections.search", purpose: "Find Item 9A disclosures", exampleArgs: { q: "material weakness", form: "10-K", limit: 50 } },
@@ -1123,12 +1163,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "insurance-restatement-detection-renewal-book",
     persona: "insurance",
     status: "v1",
-    title: "Detect restatements across renewal book",
+    title: "Restatement disclosure review",
     category: "Restatement risk",
     oneLiner:
       "Sweep renewal book for 10-K/A restatement filings + supporting context.",
     prompt:
-      "For a renewal book of 100 insureds, sweep for any 10-K/A (amended annual report) filed in the past 24 months. For each match, search for 'restatement' language in the underlying 10-K, pull Item 9A (Controls), and run an intelligence query for any analyst commentary in the same window. Output a restatement-risk ranked alert table for the renewal pricing committee.",
+      "For [TICKER LIST] and the last [24 MONTHS], locate 10-K/A and 10-Q/A filings, then search those filings and the related original reports for \"restatement,\" \"revision,\" and \"non-reliance.\" For every match, identify the financial periods affected, the issuer's stated reason, any Item 4.02 or Item 9A disclosure, and the accession numbers for both original and amendment where available. Produce a review queue sorted by filing date, not an actuarial or claims ranking. State clearly when an amendment does not itself establish a restatement. Use filings.search, sections.search, sections.get, and companies.financials. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "filings.search", purpose: "10-K/A inventory", exampleArgs: { form: "10-K/A", limit: 50 } },
       { tool: "sections.search", purpose: "Restatement language search", exampleArgs: { q: "restatement", form: "10-K/A", limit: 50 } },
@@ -1142,12 +1182,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "insurance-officer-departure-claims-trigger",
     persona: "insurance",
     status: "v1",
-    title: "Track officer departures as potential claims triggers",
+    title: "Executive-transition alert",
     category: "Claims monitoring",
     oneLiner:
       "Surface 8-K Item 5.02 officer departures for D&O claims-trigger alerts.",
     prompt:
-      "For an insured book of 100 public companies, sweep the past 30 days of 8-K filings for any Item 5.02 (officer/director departure) disclosure. For each match, extract the Item 5.02 text, pull the executive's most recent comp comparison, and check Form 4 trading activity in the past 60 days. Output a claims-trigger alert digest.",
+      "Monitor [TICKER LIST] for [DATE RANGE]. Find 8-K Item 5.02 disclosures, retrieve the full section for each event, and classify the disclosed event as appointment, retirement, resignation, termination, board change, or other. Add the latest proxy compensation record and the reporting person's Form 4 activity only when the identity can be matched confidently. Provide an alert digest with exact filing evidence and a separate \"questions for review\" column. Do not label a routine transition a claims trigger or speculate about undisclosed reasons. Use filings.search, sections.search, sections.get, comp.list, and insiders.list. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "filings.search", purpose: "Recent 8-K filings", exampleArgs: { form: "8-K", limit: 100 } },
       { tool: "sections.get", purpose: "Item 5.02 text per match", exampleArgs: { ticker: "WFC", form: "8-K", sectionKey: "item_5_02" } },
@@ -1161,12 +1201,12 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     id: "insurance-peer-benchmark-renewal-pricing",
     persona: "insurance",
     status: "v1",
-    title: "Peer-benchmark for renewal pricing context",
+    title: "Peer context for renewal discussion",
     category: "Pricing benchmarking",
     oneLiner:
       "Build a factor-similar peer set for renewal pricing context.",
     prompt:
-      "For an insured renewal candidate, generate the top 10 factor-similar peer companies, pull each peer's most recent annual financials and named-executive comp, and run an intelligence query for any peer-specific risk events in the past 12 months. Output a renewal pricing context table.",
+      "For [TICKER], create a public-disclosure peer context note. Use factors.related_stocks to propose up to [10] comparable names, then retrieve each company's latest annual financial statements and named-executive compensation. For the subject and peers, identify disclosed control weaknesses, restatements, or auditor-change filings in [LOOKBACK]. Present the raw measures and citations; explain why a factor-similar peer is only a screening cohort, not an underwriting comparable. Do not recommend premium, retention, limits, or terms. Use factors.related_stocks, companies.financials, comp.list, filings.search, and sections.search. For a date window, MCP `filings.search` and `sections.search` do not filter by date: fetch candidate records, then post-filter the returned `filingDate` locally before selecting sections or reporting results.",
     expectedToolChain: [
       { tool: "factors.related_stocks", purpose: "Factor-similar peer cohort", exampleArgs: { symbol: "WFC", limit: 10 } },
       { tool: "companies.financials", purpose: "Peer fundamentals", exampleArgs: { ticker: "JPM", period: "annual", limit: 1 } },
@@ -1186,11 +1226,11 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     oneLiner:
       "Pull typed AAER metadata + respondent comp + ownership for claims investigation.",
     prompt:
-      "For an AAER respondent (Accounting and Auditing Enforcement Release), pull events.enforcement for the typed AAER record, comp.list for the respondent's comp history, owners.get_13f for institutional context, and insiders.list for trading activity in the AAER window. Output an enriched respondent profile.",
+      "For an AAER respondent (Accounting and Auditing Enforcement Release), pull events.enforcement for the typed AAER record, comp.list for the respondent's comp history, owners.institutional_holders for issuer-level institutional context, and insiders.list for trading activity in the AAER window. Output an enriched respondent profile.",
     expectedToolChain: [
       { tool: "events.enforcement", purpose: "Typed AAER metadata (FUTURE)", exampleArgs: { ticker: "WFC" } },
       { tool: "comp.list", purpose: "Respondent comp history", exampleArgs: { ticker: "WFC", limit: 10 } },
-      { tool: "owners.get_13f", purpose: "Institutional context", exampleArgs: { cik: "0000072971" } },
+      { tool: "owners.institutional_holders", purpose: "Issuer-level institutional context", exampleArgs: { ticker: "WFC", limit: 20 } },
       { tool: "insiders.list", purpose: "Trading activity in AAER window", exampleArgs: { ticker: "WFC", limit: 30 } },
     ],
     expectedOutput: "Enriched AAER respondent profile.",
@@ -1298,6 +1338,11 @@ export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = [
     difficulty: "intermediate",
   },
 ] as const
+
+// `expectedToolChain` is the authored contract. Prompt copy can mention tools
+// as exclusions or alternatives, so deriving the API response from body
+// substrings would advertise tools that the workflow explicitly forbids.
+export const AGENT_PROMPT_LIBRARY: readonly AgentPrompt[] = RAW_AGENT_PROMPT_LIBRARY
 
 // ----------------------------------------------------------------------------
 // Helpers

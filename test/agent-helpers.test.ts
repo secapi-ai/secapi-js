@@ -1185,6 +1185,25 @@ describe("SecApiClient agent helpers", () => {
     expect(seen).toEqual(["https://api.secapi.ai/v1/situations/sit%2Fwith%20spaces/export"])
   })
 
+  test("public embed issue helpers route to the anonymous archive surface", async () => {
+    const seen: string[] = []
+    const client = new SecApiClient({
+      telemetry: false,
+      fetch: async (url) => {
+        seen.push(String(url))
+        return jsonResponse({ object: "list", data: [], hasMore: false, nextCursor: null })
+      },
+    })
+
+    await client.embedSituationIssues({ limit: 12 })
+    await client.embedSituationIssue("special/situations digest 22")
+
+    expect(seen).toEqual([
+      "https://api.secapi.ai/v1/embed/situations/issues?limit=12",
+      "https://api.secapi.ai/v1/embed/situations/issues/special%2Fsituations%20digest%2022",
+    ])
+  })
+
   test("filing helpers escape opaque path ids", async () => {
     const seenUrls: string[] = []
     const client = new SecApiClient({
@@ -1254,7 +1273,7 @@ describe("SecApiClient agent helpers", () => {
     const client = new SecApiClient({ telemetry: false })
 
     try {
-      client.streamFilings()
+      client.streamFilings(undefined as never)
       throw new Error("expected streamFilings to reject missing streamId")
     } catch (error) {
       expect(error).toBeInstanceOf(SecApiError)
@@ -1307,8 +1326,6 @@ describe("SecApiClient agent helpers", () => {
 
       const stream = client.streamFilings({
         streamId: " str_test ",
-        forms: ["10-K", "8-K"],
-        tickers: "AAPL",
         cursor: "cur_1",
         autoReconnect: false,
         onEvent: (event) => seenEvents.push(event),
@@ -1347,8 +1364,8 @@ describe("SecApiClient agent helpers", () => {
       expect(url.pathname).toBe("/v1/stream/ws")
       expect(url.searchParams.get("stream_id")).toBe("str_test")
       expect(url.searchParams.get("ticket")).toBe("ticket_test")
-      expect(url.searchParams.get("forms")).toBe("10-K,8-K")
-      expect(url.searchParams.get("tickers")).toBe("AAPL")
+      expect(url.searchParams.has("forms")).toBe(false)
+      expect(url.searchParams.has("tickers")).toBe(false)
       expect(url.searchParams.get("cursor")).toBe("cur_1")
       expect(seenEvents).toEqual([
         {

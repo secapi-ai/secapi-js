@@ -68,7 +68,23 @@ import {
   responseViewSchema,
   situationMonitorFilterSchema,
 } from "./generated-contracts/index.js"
-import type { Entity, Filing, Section, SituationMonitorFilter, SituationUnderwritingPack, SituationWeeklyIssue, SituationWeeklyIssueList } from "./generated-contracts/index.js"
+import type {
+  Entity,
+  Filing,
+  FundLetter,
+  FundLetterConviction,
+  FundLetterDistribution,
+  FundLetterRelationship,
+  FundLetterSource,
+  FundLetterStance,
+  FundLetterThesis,
+  FundLetterType,
+  Section,
+  SituationMonitorFilter,
+  SituationUnderwritingPack,
+  SituationWeeklyIssue,
+  SituationWeeklyIssueList,
+} from "./generated-contracts/index.js"
 import type { z } from "zod"
 
 /**
@@ -80,7 +96,7 @@ export type ResponseView = z.infer<typeof responseViewSchema>
 
 const DEFAULT_BASE_URL = "https://api.secapi.ai"
 const DEFAULT_API_VERSION = "2026-03-19"
-export const SDK_VERSION = "1.2.0"
+export const SDK_VERSION = "1.3.0"
 const POSTHOG_CAPTURE_HOST = "https://us.i.posthog.com"
 
 const SAFE_RETRY_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
@@ -235,6 +251,151 @@ type SituationWatchParams = {
   filters?: SituationMonitorFilter
   startAt?: string
   delivery: SituationWatchDelivery
+}
+
+// ----- Fund Letters plane (Track F). Coded to the frozen /v1/fund-letters -----
+// surface; `sort` values are typed as open strings until Track A's OpenAPI
+// lands (reconciled at merge).
+
+type FundLetterListParams = {
+  manager_id?: string
+  fund_id?: string
+  ticker?: string
+  cik?: string
+  letter_type?: FundLetterType
+  source?: FundLetterSource
+  distribution?: FundLetterDistribution
+  /** Canonical `YYYYQn` reporting period (e.g. "2025Q1"). */
+  period?: string
+  year?: number
+  quarter?: number
+  published_from?: string
+  published_to?: string
+  /** Convenience updatedAt filter; `/changes` is the correct delta primitive. */
+  since?: string
+  sort?: string
+  cursor?: string
+  limit?: number
+  view?: ResponseView
+}
+
+/**
+ * `/search` filters the index metadata (not per-thesis fields), so it takes the
+ * list filters MINUS `cik`/`since`/`sort`/`cursor`/`view` — results are
+ * relevance-ranked top-N (a `limit` clamp, no pagination), hits carry
+ * page-anchored highlights.
+ */
+type FundLetterSearchParams = {
+  /** Full-text query over letter bodies. */
+  q: string
+  manager_id?: string
+  fund_id?: string
+  ticker?: string
+  letter_type?: FundLetterType
+  source?: FundLetterSource
+  distribution?: FundLetterDistribution
+  /** Canonical `YYYYQn` reporting period (e.g. "2025Q1"). */
+  period?: string
+  year?: number
+  quarter?: number
+  published_from?: string
+  published_to?: string
+  limit?: number
+}
+
+/** `/semantic` takes the same exact-period filter set as `/search` plus `top_k`. */
+type FundLetterSemanticParams = {
+  q: string
+  top_k?: number
+  manager_id?: string
+  fund_id?: string
+  ticker?: string
+  letter_type?: FundLetterType
+  source?: FundLetterSource
+  distribution?: FundLetterDistribution
+  period?: string
+  year?: number
+  quarter?: number
+  published_from?: string
+  published_to?: string
+}
+
+type FundLetterThesesParams = {
+  ticker?: string
+  cik?: string
+  manager_id?: string
+  fund_id?: string
+  letter_id?: string
+  /** One relationship or a comma list (arrays are joined for you). */
+  relationship?: FundLetterRelationship | FundLetterRelationship[] | string | string[]
+  stance?: FundLetterStance
+  conviction?: FundLetterConviction
+  period?: string
+  period_from?: string
+  period_to?: string
+  since?: string
+  sort?: string
+  cursor?: string
+  limit?: number
+  view?: ResponseView
+}
+
+type FundLetterManagersParams = {
+  q?: string
+  strategy?: string
+  has_13f?: boolean
+  min_letters?: number
+  sort?: string
+  cursor?: string
+  limit?: number
+  view?: ResponseView
+}
+
+type FundLetterFundsParams = {
+  manager_id?: string
+  q?: string
+  cursor?: string
+  limit?: number
+  view?: ResponseView
+}
+
+type FundLetterCompaniesParams = {
+  q?: string
+  min_theses?: number
+  period?: string
+  sort?: string
+  cursor?: string
+  limit?: number
+  view?: ResponseView
+}
+
+type FundLetterChangesParams = {
+  since?: string
+  /** One change type or a comma list (e.g. "letter.published,thesis.extracted"). */
+  types?: string | string[]
+  ticker?: string
+  manager_id?: string
+  limit?: number
+  cursor?: string
+}
+
+export type FundLetterDocumentParams = {
+  /** Defaults to "markdown" (the JSON pages document that anchors verify against). */
+  format?: "pdf" | "markdown"
+  /** Retrieve a superseded source variant so historical anchors still verify. */
+  sha?: string
+}
+
+/**
+ * `format=pdf` result: the SDK surfaces the presigned/EDGAR redirect target
+ * instead of following it, so callers control how the bytes are fetched.
+ */
+export type FundLetterDocumentRedirect = {
+  object: "fund_letter_document_redirect"
+  letterId: string
+  format: "pdf"
+  url: string
+  status: number
 }
 
 type FactorKeySelection = FactorResponseControls & {
@@ -974,7 +1135,6 @@ export class SecApiClient {
     historyCsv: (...args: Parameters<SecApiClient["factorHistoryCsv"]>) => this.factorHistoryCsv(...args),
     dashboard: (...args: Parameters<SecApiClient["factorDashboard"]>) => this.factorDashboard(...args),
     macroSensitivity: (...args: Parameters<SecApiClient["factorMacroSensitivity"]>) => this.factorMacroSensitivity(...args),
-    screen: (...args: Parameters<SecApiClient["factorScreen"]>) => this.factorScreen(...args),
     valuations: (...args: Parameters<SecApiClient["factorValuations"]>) => this.factorValuations(...args),
     exposures: (...args: Parameters<SecApiClient["factorExposures"]>) => this.factorExposures(...args),
     decomposition: (...args: Parameters<SecApiClient["factorDecomposition"]>) => this.factorDecomposition(...args),
@@ -1023,6 +1183,24 @@ export class SecApiClient {
     transcripts: (...args: Parameters<SecApiClient["filingTranscripts"]>) => this.filingTranscripts(...args),
     guidance: (...args: Parameters<SecApiClient["filingGuidance"]>) => this.filingGuidance(...args),
     coverage: (...args: Parameters<SecApiClient["filingCoverage"]>) => this.filingCoverage(...args),
+  }
+
+  readonly fundLetters = {
+    list: (...args: Parameters<SecApiClient["listFundLetters"]>) => this.listFundLetters(...args),
+    search: (...args: Parameters<SecApiClient["searchFundLetters"]>) => this.searchFundLetters(...args),
+    semantic: (...args: Parameters<SecApiClient["semanticSearchFundLetters"]>) => this.semanticSearchFundLetters(...args),
+    get: (...args: Parameters<SecApiClient["getFundLetter"]>) => this.getFundLetter(...args),
+    document: (...args: Parameters<SecApiClient["getFundLetterDocument"]>) => this.getFundLetterDocument(...args),
+    theses: (...args: Parameters<SecApiClient["listFundLetterTheses"]>) => this.listFundLetterTheses(...args),
+    managers: (...args: Parameters<SecApiClient["listFundLetterManagers"]>) => this.listFundLetterManagers(...args),
+    managerGet: (...args: Parameters<SecApiClient["getFundLetterManager"]>) => this.getFundLetterManager(...args),
+    managerOverview: (...args: Parameters<SecApiClient["getFundManagerOverview"]>) => this.getFundManagerOverview(...args),
+    funds: (...args: Parameters<SecApiClient["listFundLetterFunds"]>) => this.listFundLetterFunds(...args),
+    fundGet: (...args: Parameters<SecApiClient["getFundLetterFund"]>) => this.getFundLetterFund(...args),
+    companies: (...args: Parameters<SecApiClient["listFundLetterCompanies"]>) => this.listFundLetterCompanies(...args),
+    changes: (...args: Parameters<SecApiClient["listFundLetterChanges"]>) => this.listFundLetterChanges(...args),
+    paginate: (...args: Parameters<SecApiClient["paginateFundLetters"]>) => this.paginateFundLetters(...args),
+    paginateTheses: (...args: Parameters<SecApiClient["paginateFundLetterTheses"]>) => this.paginateFundLetterTheses(...args),
   }
 
   readonly portfolio = {
@@ -2041,6 +2219,14 @@ export class SecApiClient {
     return this.get("/v1/embed/situations/stats", params)
   }
 
+  async embedSituationIssues(params: RequestParams<{ limit?: number }> = {}) {
+    return this.get<SituationWeeklyIssueList>("/v1/embed/situations/issues", params)
+  }
+
+  async embedSituationIssue(issue: string | number, options?: RequestOptions) {
+    return this.get<SituationWeeklyIssue>(`/v1/embed/situations/issues/${encodeURIComponent(String(issue))}`, options)
+  }
+
   async embedSituationDetail(id: string, params: RequestParams<Record<string, never>> = {}) {
     return this.get(`/v1/embed/situations/${encodeURIComponent(id)}`, params)
   }
@@ -2228,10 +2414,6 @@ export class SecApiClient {
     return this.get("/v1/factors/correlations", params)
   }
 
-  async factorScreen(params: RequestParams<FactorKeySelection & { limit?: number }> = {}) {
-    return this.get("/v1/factors/screen", params)
-  }
-
   async factorExtremeMoves(params: RequestParams<FactorKeySelection & {
     limit?: number
     side?: "both" | "up" | "down" | "flat"
@@ -2373,14 +2555,6 @@ export class SecApiClient {
 
   async strategyFactorRotation(body: { country?: string; category?: string; window?: string; lookback?: string; limit?: number } = {}, options?: RequestOptions) {
     return this.request("/v1/strategies/factor-rotation", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    }, undefined, options)
-  }
-
-  async strategyRegimeScreen(body: { country?: string; category?: string; window?: string; lookback?: string; limit?: number } = {}, options?: RequestOptions) {
-    return this.request("/v1/strategies/regime-screen", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -2863,6 +3037,193 @@ export class SecApiClient {
     return this.get("/v1/intelligence/coverage", params)
   }
 
+  // ----- Fund Letters plane (Track F) -----
+  // Investor letters from hedge funds, partnerships, and registered funds
+  // (EDGAR N-CSR/N-CSRS), parsed into per-company theses with page-anchored,
+  // machine-verifiable provenance. Dormant behind OMNI_FUND_LETTERS_ENABLED
+  // server-side (404 until the flag flips).
+
+  /**
+   * List fund letters with catalog filters (manager, fund, company, letter
+   * type, source/distribution tiers, reporting period, publication window).
+   */
+  async listFundLetters(params: RequestParams<FundLetterListParams> = {}) {
+    return this.get("/v1/fund-letters", params)
+  }
+
+  paginateFundLetters(
+    params: RequestParams<FundLetterListParams> = {},
+    options: PaginationOptions<FundLetter> = {},
+  ) {
+    return this.paginate<FundLetter>((pageParams) => this.listFundLetters(pageParams), params, options)
+  }
+
+  /**
+   * Full-text search over letter bodies. Hits carry `highlights[]` with
+   * page-anchored snippets (`{snippet, anchor}`) that verify against
+   * `/document?format=markdown`.
+   */
+  async searchFundLetters(params: RequestParams<FundLetterSearchParams>) {
+    return this.get("/v1/fund-letters/search", params)
+  }
+
+  /**
+   * Semantic (vector) search over letter content. Returns
+   * `{score, letter, chunkText, anchor}` rows; `top_k` caps results (≤50).
+   */
+  async semanticSearchFundLetters(params: RequestParams<FundLetterSemanticParams>) {
+    return this.get("/v1/fund-letters/semantic", params)
+  }
+
+  /**
+   * Retrieve one letter: narratives, performance figures, inline theses (cap
+   * 25 with `thesisCount`), and cross-links. Merged/superseded ids resolve via
+   * aliases; the response carries the canonical `id` plus `requestedId`.
+   */
+  async getFundLetter(letterId: string, params: RequestParams<{ view?: ResponseView }> = {}) {
+    return this.get(`/v1/fund-letters/${encodeURIComponent(letterId)}`, params)
+  }
+
+  /**
+   * Retrieve a letter's document. `format: "markdown"` (default) returns the
+   * page-segmented JSON document (`{pages, sourceSha256, paginationVersion,
+   * pageCount}`) that provenance anchors verify against byte-for-byte.
+   * `format: "pdf"` returns a `FundLetterDocumentRedirect` with the presigned
+   * R2 / EDGAR redirect URL instead of following it (the PDF path bypasses the
+   * retry pipeline — it is a single manual-redirect fetch). Letters with
+   * `distribution: "third_party"` reject with `document_not_distributable`.
+   * Pass `sha` to retrieve a superseded source variant so old anchors verify.
+   */
+  async getFundLetterDocument(letterId: string, params: RequestParams<FundLetterDocumentParams> = {}) {
+    const { format, ...rest } = params
+    if (format === "pdf") {
+      return this.fundLetterDocumentRedirect(letterId, rest)
+    }
+    return this.get(`/v1/fund-letters/${encodeURIComponent(letterId)}/document`, { ...rest, format: "markdown" })
+  }
+
+  private async fundLetterDocumentRedirect(letterId: string, params: RequestParams<Record<string, unknown>>): Promise<FundLetterDocumentRedirect> {
+    const path = buildUrl(`/v1/fund-letters/${encodeURIComponent(letterId)}/document`, { ...params, format: "pdf" })
+    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+      method: "GET",
+      redirect: "manual",
+      headers: this.headers(),
+    })
+
+    if (response.status >= 300 && response.status < 400) {
+      const url = response.headers.get("location")
+      if (!url) {
+        throw new SecApiError({
+          message: "Fund letter PDF redirect response did not include a Location header",
+          status: response.status,
+          code: "client_document_redirect_missing_location",
+        })
+      }
+      return { object: "fund_letter_document_redirect", letterId, format: "pdf", url, status: response.status }
+    }
+
+    if (response.type === "opaqueredirect" || response.status === 0) {
+      throw new SecApiError({
+        message: "Fund letter PDF documents redirect to a presigned URL, which this fetch implementation cannot expose (opaque redirect). Fetch the PDF from a server-side runtime, or request format: \"markdown\" instead.",
+        status: 0,
+        code: "client_document_redirect_opaque",
+      })
+    }
+
+    const { payload, requestId } = await this.parseResponse(response)
+    if (!response.ok) {
+      throw new SecApiError({
+        message: buildErrorMessage(response.status, requestId, payload),
+        status: response.status,
+        code: extractErrorCode(payload),
+        requestId,
+        body: payload,
+        hint: extractDiagnosticString(payload, ["hint"]),
+        docsUrl: extractDiagnosticString(payload, ["docsUrl", "docs_url"]),
+        action: extractDiagnosticString(payload, ["action"]),
+        retryable: extractRetryable(payload),
+        details: diagnosticDetails(payload),
+      })
+    }
+
+    // Tolerate a JSON body that carries the target URL directly (drift-safe
+    // against a non-302 server implementation; reconciled after Track A merges).
+    const directUrl = objectStringField(payload, ["url", "downloadUrl", "download_url"])
+    if (directUrl) {
+      return { object: "fund_letter_document_redirect", letterId, format: "pdf", url: directUrl, status: response.status }
+    }
+
+    throw new SecApiError({
+      message: "Expected a redirect for fund letter PDF document but received a non-redirect response",
+      status: response.status,
+      code: "client_document_redirect_expected",
+      body: payload,
+    })
+  }
+
+  /**
+   * Cross-cutting thesis screen: everything managers' letters say about a
+   * company (or everything a manager/fund/letter said), filterable by
+   * relationship (comma list), stance, conviction, and reporting period.
+   */
+  async listFundLetterTheses(params: RequestParams<FundLetterThesesParams> = {}) {
+    return this.get("/v1/fund-letters/theses", params)
+  }
+
+  paginateFundLetterTheses(
+    params: RequestParams<FundLetterThesesParams> = {},
+    options: PaginationOptions<FundLetterThesis> = {},
+  ) {
+    return this.paginate<FundLetterThesis>((pageParams) => this.listFundLetterTheses(pageParams), params, options)
+  }
+
+  /** List letter-writing managers with coverage stats and 13F cross-links. */
+  async listFundLetterManagers(params: RequestParams<FundLetterManagersParams> = {}) {
+    return this.get("/v1/fund-letters/managers", params)
+  }
+
+  /** Retrieve one manager profile (strategy, coverage, identifiers, 13F cross-link). */
+  async getFundLetterManager(managerId: string, params: RequestParams<{ view?: ResponseView }> = {}) {
+    return this.get(`/v1/fund-letters/managers/${encodeURIComponent(managerId)}`, params)
+  }
+
+  /**
+   * Fund Overview: one token-efficient briefing per manager — canonical name,
+   * description, founders, website, coverage counts, and the latest letter's
+   * highlights (up to 5 headline theses). The manager twin of
+   * getCompanyOverview; merged manager ids resolve via aliases.
+   */
+  async getFundManagerOverview(managerId: string, params: RequestParams<Record<string, never>> = {}) {
+    return this.get(`/v1/fund-letters/managers/${encodeURIComponent(managerId)}/overview`, params)
+  }
+
+  /** List funds (optionally one manager's funds). */
+  async listFundLetterFunds(params: RequestParams<FundLetterFundsParams> = {}) {
+    return this.get("/v1/fund-letters/funds", params)
+  }
+
+  /** Retrieve one fund. */
+  async getFundLetterFund(fundId: string, params: RequestParams<{ view?: ResponseView }> = {}) {
+    return this.get(`/v1/fund-letters/funds/${encodeURIComponent(fundId)}`, params)
+  }
+
+  /**
+   * Company coverage index: every company with at least one thesis, with
+   * thesis/manager/letter counts and the latest stance.
+   */
+  async listFundLetterCompanies(params: RequestParams<FundLetterCompaniesParams> = {}) {
+    return this.get("/v1/fund-letters/companies", params)
+  }
+
+  /**
+   * Delta feed (poll twin of the fund_letter.* webhooks): keyset-paginated
+   * events (letter.published|updated|superseded, thesis.extracted,
+   * manager.added). Never response-cached server-side.
+   */
+  async listFundLetterChanges(params: RequestParams<FundLetterChangesParams> = {}) {
+    return this.get("/v1/fund-letters/changes", params)
+  }
+
   async mcpInfo(options?: RequestOptions) {
     return this.request("/mcp", {}, undefined, options)
   }
@@ -2887,7 +3248,7 @@ export class SecApiClient {
    * Uses the global `WebSocket` constructor (Node 21+, Bun, Deno, browsers).
    * Returns a `SecApiFilingStream` with typed event callbacks and auto-reconnect.
    */
-  streamFilings(params?: StreamFilingsParams): SecApiFilingStream {
+  streamFilings(params: StreamFilingsParams): SecApiFilingStream {
     const streamId = params?.streamId?.trim()
     if (!streamId) {
       throw new SecApiError({
@@ -2896,20 +3257,13 @@ export class SecApiClient {
         code: "client_stream_id_required",
       })
     }
-    const options = params as StreamFilingsParams
-    const streamState: { forms?: string | string[]; tickers?: string | string[]; cursor?: string } = {
-      forms: options.forms,
-      tickers: options.tickers,
-      cursor: options.cursor,
-    }
+    const options = params
 
     return new SecApiFilingStream(async (cursor) => {
       const ticket = await this.createStreamTicket()
       return this.baseUrl.replace(/^http/, "ws") + buildUrl("/v1/stream/ws", {
         stream_id: streamId,
-        forms: streamState.forms,
-        tickers: streamState.tickers,
-        cursor: cursor ?? streamState.cursor,
+        cursor: cursor ?? options.cursor,
         ticket: ticket.token,
       })
     }, {
@@ -2921,13 +3275,6 @@ export class SecApiClient {
       onRateLimited: options.onRateLimited,
       onError: options.onError,
       onClose: options.onClose,
-    }, (filters) => {
-      if (filters.forms) {
-        streamState.forms = filters.forms
-      }
-      if (filters.tickers) {
-        streamState.tickers = filters.tickers
-      }
     })
   }
 }
@@ -2938,8 +3285,6 @@ export class SecApiClient {
 
 export type StreamFilingsParams = {
   streamId: string
-  forms?: string | string[]
-  tickers?: string | string[]
   cursor?: string
   autoReconnect?: boolean
   maxReconnectDelayMs?: number
@@ -2969,7 +3314,7 @@ export type StreamConnectedEvent = {
   event: "connected"
   connectionId: string
   orgId: string
-  filters: { forms: string[]; tickers: string[] }
+  filters: { forms: string[]; tickers: string[]; eventTypes: string[] }
   cursor: string | null
   serverTime: string
 }
@@ -3002,7 +3347,6 @@ export class SecApiFilingStream {
   constructor(
     private readonly buildUrl: (cursor: string | null) => Promise<string>,
     private readonly opts: StreamInternalOptions,
-    private readonly persistFilters?: (filters: { forms?: string[]; tickers?: string[] }) => void,
   ) {
     void this.connect()
   }
@@ -3081,12 +3425,6 @@ export class SecApiFilingStream {
   /** Send a ping to the server. */
   ping() {
     this.ws?.send(JSON.stringify({ type: "ping" }))
-  }
-
-  /** Update form/ticker filters on a live connection. */
-  updateFilters(filters: { forms?: string[]; tickers?: string[] }) {
-    this.ws?.send(JSON.stringify({ type: "update_filters", ...filters }))
-    this.persistFilters?.(filters)
   }
 
   /** Close the stream permanently (no auto-reconnect). */
@@ -3170,4 +3508,18 @@ export type {
   SituationFeedItem,
   SituationStats,
   SituationPerformance,
+  FundLetter,
+  FundLetterThesis,
+  FundLetterManager,
+  FundLetterFund,
+  FundLetterCompanyCoverage,
+  FundLetterChange,
+  FundLetterAnchor,
+  FundLetterType,
+  FundLetterSource,
+  FundLetterDistribution,
+  FundLetterRelationship,
+  FundLetterStance,
+  FundLetterConviction,
+  FundLetterChangeType,
 } from "./generated-contracts/index.js"

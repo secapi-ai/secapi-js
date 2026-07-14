@@ -29,6 +29,13 @@ export const DATASTREAM_EVENT_TYPES = [
   "footnote.topic_delta",
   "section.delta",
   "guidance.extracted",
+  // Fund-letters plane — public_emitting since the fund-letters producer went
+  // live (OMNI_FUND_LETTERS_ENABLED flipped post golden-set gates + shadow soak).
+  "fund_letter.published",
+  "fund_letter.updated",
+  "fund_letter.superseded",
+  "fund_letter.thesis_extracted",
+  "fund_letter.manager_added",
 ] as const
 
 // Back-compat alias for existing misspelled imports.
@@ -468,6 +475,84 @@ export const DATASTREAM_EVENT_CATALOG: readonly DatastreamEventCatalogEntry[] = 
     billingFamily: "delivery_events",
     transports: ["webhook", "stream"],
     samplePayload: { transcriptId: "etr_123", ticker: "ABCD", fiscalPeriod: "FY2026 Q3", metric: "revenue", direction: "raised" },
+  },
+  // -------------------------------------------------------------------------
+  // Fund-letters plane. Entries shipped `reserved` and were promoted to
+  // `public_emitting` when the producer went live (golden-set gates +
+  // shadow soak, then the Wave-A rollout pattern). The `/v1/fund-letters/changes`
+  // keyset feed is the poll twin of these webhook events — event types below
+  // mirror the FUND_LETTER_CHANGE_TYPES enum in fund-letters.ts (with the
+  // `fund_letter.` transport prefix).
+  // -------------------------------------------------------------------------
+  {
+    object: "event_type",
+    type: "fund_letter.published",
+    status: "public_emitting",
+    producer: "fund_letters_pipeline",
+    description: "Reserved for new fund-letter publication (letter ingested, extracted, and canonical) once the fund-letters producer is public.",
+    schemaVersion: SCHEMA_VERSION,
+    filterable: true,
+    replaySupport: "manual_only",
+    retention: "plan_default",
+    billingFamily: "delivery_events",
+    transports: ["webhook", "stream"],
+    samplePayload: { letterId: "ltr_123", managerId: "mgr_123", letterType: "hedge_fund_letter", period: "2026Q1", tickers: ["ABCD"] },
+  },
+  {
+    object: "event_type",
+    type: "fund_letter.updated",
+    status: "public_emitting",
+    producer: "fund_letters_pipeline",
+    description: "Reserved for fund-letter re-extraction/metadata updates (non-supersede changes) once the fund-letters producer is public.",
+    schemaVersion: SCHEMA_VERSION,
+    filterable: true,
+    replaySupport: "manual_only",
+    retention: "plan_default",
+    billingFamily: "delivery_events",
+    transports: ["webhook", "stream"],
+    samplePayload: { letterId: "ltr_123", managerId: "mgr_123", changedFields: ["thesisCount", "narratives.outlook"] },
+  },
+  {
+    object: "event_type",
+    type: "fund_letter.superseded",
+    status: "public_emitting",
+    producer: "fund_letters_pipeline",
+    description: "Reserved for canonical-source swaps: a letter's canonical bytes changed (fund-original beat an aggregator copy); old letter + thesis IDs resolve via aliases and /document?sha= keeps historical anchors verifiable.",
+    schemaVersion: SCHEMA_VERSION,
+    filterable: true,
+    replaySupport: "manual_only",
+    retention: "plan_default",
+    billingFamily: "delivery_events",
+    transports: ["webhook", "stream"],
+    samplePayload: { letterId: "ltr_456", supersededLetterId: "ltr_123", managerId: "mgr_123", reason: "canonical_swap" },
+  },
+  {
+    object: "event_type",
+    type: "fund_letter.thesis_extracted",
+    status: "public_emitting",
+    producer: "fund_letters_pipeline",
+    description: "Reserved for per-company investment-thesis extraction from a fund letter (ticker-filterable) once the fund-letters producer is public.",
+    schemaVersion: SCHEMA_VERSION,
+    filterable: true,
+    replaySupport: "manual_only",
+    retention: "plan_default",
+    billingFamily: "delivery_events",
+    transports: ["webhook", "stream", "email"],
+    samplePayload: { thesisId: "ths_123", letterId: "ltr_123", managerId: "mgr_123", ticker: "ABCD", relationship: "long", stance: "bullish" },
+  },
+  {
+    object: "event_type",
+    type: "fund_letter.manager_added",
+    status: "public_emitting",
+    producer: "fund_letters_pipeline",
+    description: "Reserved for first-time coverage of a fund manager (first canonical letter ingested) once the fund-letters producer is public.",
+    schemaVersion: SCHEMA_VERSION,
+    filterable: true,
+    replaySupport: "manual_only",
+    retention: "plan_default",
+    billingFamily: "delivery_events",
+    transports: ["webhook", "stream"],
+    samplePayload: { managerId: "mgr_123", managerName: "Example Capital Management", firstLetterId: "ltr_123" },
   },
 ]
 

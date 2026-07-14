@@ -6,9 +6,7 @@
 
 const schemaRef = (name: string) => ({ $ref: `#/components/schemas/${name}` })
 
-const objectExampleBySchema: Record<string, string> = {
-  FactorRegimeScreen: "regime_screen",
-}
+const objectExampleBySchema: Record<string, string> = {}
 
 const exampleAsOf = "2026-06-09T22:15:00.000Z"
 const exampleSnapshotAt = "2026-06-09T19:45:00.000Z"
@@ -1107,17 +1105,6 @@ const responseExampleBySchema: Record<string, unknown> = {
     responseMode: "compact",
     ...exampleTrustMetadata,
   },
-  FactorRegimeScreen: {
-    object: "regime_screen",
-    id: "regime_screen:US:soft_landing:2026-06-09",
-    asOf: exampleAsOf,
-    country: "US",
-    regime: exampleRegime,
-    matches: [exampleFactorReturn],
-    summaryMd: "Value and momentum are the highest-ranked style factors for the current regime screen.",
-    responseMode: "compact",
-    ...exampleTrustMetadata,
-  },
   PortfolioStressTest: {
     object: "portfolio_stress_test",
     id: "portfolio_stress_test:higher_for_longer:2026-06-09",
@@ -1259,7 +1246,6 @@ const launchResponseSchemasRequiringExplicitExamples = new Set([
   "ModelPortfolioFactorView",
   "ModelFactorAnalysis",
   "FactorRotationStrategy",
-  "FactorRegimeScreen",
 ])
 
 const responseExampleForSchema = (name: string) => {
@@ -1883,6 +1869,77 @@ const situationsByFormQueryParameters = [
   { name: "response_mode", in: "query", required: false, schema: { type: "string", enum: ["compact", "standard", "verbose", "agent"] } },
 ] as const
 
+const publicEmbedSituationListParameters = [
+  { name: "types", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated situation_type values. At most 25 values are honored." },
+  { name: "statuses", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated lifecycle statuses. At most 25 values are honored." },
+  { name: "tickers", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated tickers. At most 25 values are honored." },
+  { name: "sectors", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated sectors. At most 25 values are honored." },
+  { name: "market_cap", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated market-cap buckets (nano|micro|small|mid|large|mega). At most 25 values are honored." },
+  { name: "country", in: "query", required: false, schema: { type: "string", enum: ["US", "CA", "GB"] }, description: "Supported country code." },
+  { name: "cursor", in: "query", required: false, schema: { type: "string" }, description: "Public page cursor in {windowStart}:{offset} form." },
+  { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 10 } },
+] as const
+
+const publicEmbedSituationFeedParameters = [
+  { name: "types", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated situation_type values. At most 25 values are honored." },
+  { name: "categories", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated filing_event_category values. At most 25 values are honored." },
+  { name: "tickers", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated tickers. At most 25 values are honored." },
+  { name: "country", in: "query", required: false, schema: { type: "string", enum: ["US", "CA", "GB"] }, description: "Supported country code." },
+  { name: "cursor", in: "query", required: false, schema: { type: "string" }, description: "Public page cursor in {windowStart}:{offset} form." },
+  { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 10 } },
+] as const
+
+const publicEmbedLegacyFeedParameters = [
+  { name: "types", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated situation_type values." },
+  { name: "tickers", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated tickers." },
+  { name: "country", in: "query", required: false, schema: { type: "string", enum: ["US", "CA", "GB"] }, description: "Supported country code." },
+  { name: "cursor", in: "query", required: false, schema: { type: "string" }, description: "Public page cursor in {windowStart}:{offset} form." },
+  { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 10 } },
+] as const
+
+// Shared filter set for the fund-letters list + search + semantic endpoints
+// (Track A). Filters are strictly hand-validated server-side: malformed
+// values 400 with invalid_query_parameter, never 5xx.
+const fundLetterListParameters = [
+  { name: "manager_id", in: "query", required: false, schema: { type: "string" }, description: "mgr_-prefixed manager id." },
+  { name: "fund_id", in: "query", required: false, schema: { type: "string" }, description: "fnd_-prefixed fund id." },
+  { name: "ticker", in: "query", required: false, schema: { type: "string" }, description: "Letters mentioning this ticker." },
+  { name: "cik", in: "query", required: false, schema: { type: "string" }, description: "Letters with at least one thesis on this CIK." },
+  { name: "letter_type", in: "query", required: false, schema: { type: "string", enum: ["hedge_fund_letter", "registered_fund_letter"] } },
+  { name: "source", in: "query", required: false, schema: { type: "string", enum: ["fund_website", "edgar", "aggregator"] }, description: "Where the canonical source bytes came from." },
+  { name: "distribution", in: "query", required: false, schema: { type: "string", enum: ["public_record", "fund_published", "third_party"] }, description: "Rights tier governing what /document serves." },
+  { name: "period", in: "query", required: false, schema: { type: "string", pattern: "^\\d{4}Q[1-4]$" }, description: "Exact reporting period (YYYYQn, e.g. 2025Q1)." },
+  { name: "year", in: "query", required: false, schema: { type: "integer", minimum: 1900, maximum: 2100 } },
+  { name: "quarter", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 4 } },
+  { name: "published_from", in: "query", required: false, schema: { type: "string" }, description: "Inclusive lower bound (ISO date/datetime) on publishedAt." },
+  { name: "published_to", in: "query", required: false, schema: { type: "string" }, description: "Inclusive upper bound (ISO date/datetime) on publishedAt." },
+  { name: "since", in: "query", required: false, schema: { type: "string" }, description: "Only letters updated at or after this ISO date/datetime (updatedAt watermark convenience; /changes is the durable delta primitive). Requests with since are never response-cached." },
+  { name: "sort", in: "query", required: false, schema: { type: "string", enum: ["published_at_desc", "published_at_asc", "updated_at_desc", "updated_at_asc", "period_desc", "period_asc"], default: "published_at_desc" } },
+  { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 9007199254740991, default: 0 } },
+  { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+  { name: "view", in: "query", required: false, schema: { type: "string", enum: ["default", "compact", "agent"] } },
+] as const
+
+// Filter subset for /search + /semantic (Track D engines): the list set
+// MINUS `cik` (search-index metadata carries tickers, not per-thesis CIKs),
+// `since` (no updatedAt watermark on page indexes), `sort` (relevance-ranked),
+// `view` (hits are canonical), and `cursor` (results are a relevance-ranked
+// top-N, never offset pages — hasMore is always false; raise limit/top_k or
+// narrow filters to deepen recall).
+const fundLetterSearchFilterParameters = [
+  { name: "manager_id", in: "query", required: false, schema: { type: "string" }, description: "mgr_-prefixed manager id." },
+  { name: "fund_id", in: "query", required: false, schema: { type: "string" }, description: "fnd_-prefixed fund id." },
+  { name: "ticker", in: "query", required: false, schema: { type: "string" }, description: "Letters mentioning this ticker." },
+  { name: "letter_type", in: "query", required: false, schema: { type: "string", enum: ["hedge_fund_letter", "registered_fund_letter"] } },
+  { name: "source", in: "query", required: false, schema: { type: "string", enum: ["fund_website", "edgar", "aggregator"] }, description: "Where the canonical source bytes came from." },
+  { name: "distribution", in: "query", required: false, schema: { type: "string", enum: ["public_record", "fund_published", "third_party"] }, description: "Rights tier governing what /document serves." },
+  { name: "period", in: "query", required: false, schema: { type: "string", pattern: "^\\d{4}Q[1-4]$" }, description: "Exact reporting period (YYYYQn, e.g. 2025Q1)." },
+  { name: "year", in: "query", required: false, schema: { type: "integer", minimum: 1900, maximum: 2100 } },
+  { name: "quarter", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 4 } },
+  { name: "published_from", in: "query", required: false, schema: { type: "string" }, description: "Inclusive lower bound (ISO date/datetime) on publishedAt." },
+  { name: "published_to", in: "query", required: false, schema: { type: "string" }, description: "Inclusive upper bound (ISO date/datetime) on publishedAt." },
+] as const
+
 const statementPeriodQueryParameter = {
   name: "period",
   in: "query",
@@ -2021,6 +2078,97 @@ const streamEventPageResponse = {
   },
 } as const
 
+const semanticSearchResponseSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["object", "query", "mode", "sections", "requestId", "traceparent"],
+  properties: {
+    object: { type: "string", const: "semantic_search" },
+    query: { type: "string" },
+    mode: { type: "string", enum: ["keyword", "semantic", "hybrid"] },
+    sections: {
+      type: "object",
+      additionalProperties: false,
+      required: ["object", "data", "count", "degradedState"],
+      properties: {
+        object: { type: "string", const: "list" },
+        data: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: true,
+            required: ["object", "id", "key", "title", "contentMd", "provenance", "accession", "section_key", "char_start", "char_end", "highlighted_snippet", "source_url"],
+            properties: {
+              object: { type: "string", const: "section" },
+              id: { type: "string" },
+              ticker: { type: ["string", "null"] },
+              form: { type: "string" },
+              key: { type: "string" },
+              title: { type: "string" },
+              contentMd: { type: "string" },
+              snippet: { type: "string" },
+              accession: { type: ["string", "null"] },
+              section_key: { type: ["string", "null"] },
+              char_start: { type: ["integer", "null"], minimum: 0 },
+              char_end: { type: ["integer", "null"], minimum: 0 },
+              highlighted_snippet: { type: ["string", "null"] },
+              source_url: { type: ["string", "null"], format: "uri" },
+              score: { type: ["number", "null"] },
+              retrievalMode: { type: "string", enum: ["keyword", "semantic", "hybrid"] },
+              provenance: { $ref: "#/components/schemas/ResponseMetadata" },
+            },
+          },
+        },
+        count: { type: "integer", minimum: 0 },
+        degradedState: { anyOf: [{ type: "object", additionalProperties: true }, { type: "null" }] },
+      },
+    },
+    requestId: { type: "string" },
+    traceparent: { type: "string" },
+  },
+} as const
+
+const semanticSearchResponseExample = {
+  object: "semantic_search",
+  query: "liquidity risk",
+  mode: "hybrid",
+  sections: {
+    object: "list",
+    data: [
+      {
+        object: "section",
+        id: "sec_example_2025_10k_item_7",
+        ticker: "EXAMPLE",
+        form: "10-K",
+        key: "item_7",
+        title: "Management's Discussion and Analysis",
+        contentMd: "Example discussion of liquidity risk and capital resources.",
+        snippet: "Example discussion of liquidity risk and capital resources.",
+        accession: "example-accession",
+        section_key: "item_7",
+        char_start: 22,
+        char_end: 36,
+        highlighted_snippet: "Example discussion of **liquidity risk** and capital resources.",
+        source_url: "https://example.com/sec-filings/example-2025-10-k",
+        score: 0.8421,
+        retrievalMode: "hybrid",
+        provenance: {
+          source: "example",
+          sourceLabel: "Illustrative response - not a live SEC filing",
+          accessionNumber: null,
+          filingUrl: "https://example.com/sec-filings/example-2025-10-k",
+          retrievedAt: "2026-02-20T00:00:00.000Z",
+          parserVersion: "example",
+        },
+      },
+    ],
+    count: 1,
+    degradedState: null,
+  },
+  requestId: "req_2ZK8Q1W9F4M6P7R3",
+  traceparent: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+} as const
+
 export const openApiDocument = {
   openapi: "3.1.0",
   info: {
@@ -2040,6 +2188,46 @@ export const openApiDocument = {
     },
     "/v1/me": {
       get: { summary: "Return the current authenticated principal and organization context" },
+    },
+    "/v1/limits": {
+      get: {
+        summary: "Return the current organization's effective plan, billing state, and route quota windows",
+        ...inlineJsonResponse({
+          type: "object",
+          required: ["object", "orgId", "requestId", "recordedAt", "effectivePlanKey", "billingState", "quotas"],
+          properties: {
+            object: { type: "string", const: "limits" },
+            orgId: { type: "string" },
+            requestId: { type: "string" },
+            recordedAt: { type: "string", format: "date-time" },
+            effectivePlanKey: { type: "string" },
+            billingState: { type: "string" },
+            quotas: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["meterClass", "limit", "period", "allowed", "planKey", "billingState"],
+                properties: {
+                  meterClass: { type: "string" },
+                  limit: { type: "integer" },
+                  period: { type: "string", enum: ["minute", "hour", "day"] },
+                  allowed: { type: "boolean" },
+                  planKey: { type: "string" },
+                  billingState: { type: "string" },
+                },
+              },
+            },
+          },
+        }, {
+          object: "limits",
+          orgId: "org_example",
+          requestId: "req_example_123",
+          recordedAt: "2026-03-19T12:00:00.000Z",
+          effectivePlanKey: "personal",
+          billingState: "active",
+          quotas: [{ meterClass: "standard_read", limit: 600, period: "minute", allowed: true, planKey: "personal", billingState: "active" }],
+        }),
+      },
     },
     "/v1/org": {
       get: { summary: "Return the current organization profile" },
@@ -2239,7 +2427,51 @@ export const openApiDocument = {
       post: { summary: "Re-grant the one-time free starter allowance (resets free-grant usage), rate-limited to once per rolling 30 days per organization" },
     },
     "/v1/billing/quote": {
-      post: { summary: "Quote a billable workflow or meter class against the current billing plan and budget gates" },
+      post: {
+        summary: "Quote a billable workflow or meter class against the current billing plan and budget gates",
+        ...inlineJsonRequestBody({
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            planKey: { type: ["string", "null"], description: "Optional public plan key to quote instead of the organization's current plan." },
+            meterClass: { type: ["string", "null"], description: "Optional meter class. Provide this or a path." },
+            path: { type: ["string", "null"], description: "Optional API path used to derive the meter class. Provide this or meterClass." },
+            method: { type: ["string", "null"], description: "HTTP method used with path; defaults to GET when path is supplied." },
+            units: { type: ["number", "null"], description: "Optional positive number of units to quote." },
+          },
+        }, { path: "/v1/facts", method: "GET", units: 1 }, "Provide meterClass or path. planKey and units are optional."),
+        ...inlineJsonResponse({
+          type: "object",
+          required: ["object", "planKey", "meterClass", "meterFamily", "units", "unitAmountUsd", "amountUsd", "amountCents", "currency", "requestId", "budget", "budgetGate"],
+          properties: {
+            object: { type: "string", const: "billing_quote" },
+            planKey: { type: "string" },
+            meterClass: { type: "string" },
+            meterFamily: { type: "string" },
+            units: { type: "integer" },
+            unitAmountUsd: { type: "number" },
+            amountUsd: { type: "number" },
+            amountCents: { type: "integer" },
+            currency: { type: "string", const: "usd" },
+            requestId: { type: "string" },
+            budget: { type: "object" },
+            budgetGate: { type: ["object", "null"] },
+          },
+        }, {
+          object: "billing_quote",
+          planKey: "personal",
+          meterClass: "fact_lookup",
+          meterFamily: "standard_read",
+          units: 1,
+          unitAmountUsd: 0,
+          amountUsd: 0,
+          amountCents: 0,
+          currency: "usd",
+          requestId: "req_example_123",
+          budget: {},
+          budgetGate: null,
+        }),
+      },
     },
     "/v1/billing/budget": {
       put: { summary: "Update organization-level spend caps, soft caps, and approval thresholds for PAYG usage" },
@@ -2268,10 +2500,93 @@ export const openApiDocument = {
       },
     },
     "/v1/agent/bootstrap_tokens": {
-      post: { summary: "Issue a short-lived, single-use sponsor token for agent bootstrap under the current organization" },
+      post: {
+        summary: "Issue a short-lived, single-use sponsor token for agent bootstrap under the current organization",
+        ...inlineJsonRequestBody({
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            label: { type: ["string", "null"], description: "Optional label carried into the issued agent API key." },
+            scopes: { type: "array", items: { type: "string" }, description: "Optional requested scopes; self-serve sponsor tokens are limited to read:sec." },
+            ttlSeconds: { type: "integer", minimum: 1, maximum: 86_400, description: "Optional lifetime in seconds. The service clamps the effective value to 60 through 86,400 seconds." },
+          },
+        }, { label: "research-agent", scopes: ["read:sec"], ttlSeconds: 900 }, "Requires a human organization member authenticated with a bearer token. API keys cannot create sponsor tokens."),
+        ...inlineJsonResponse({
+          type: "object",
+          required: ["object", "id", "orgId", "actorPrincipalId", "label", "tokenPrefix", "scopes", "livemode", "expiresAt", "usedAt", "usedByPrincipalId", "createdAt", "updatedAt", "secret", "requestId"],
+          properties: {
+            object: { type: "string", const: "agent_bootstrap_token" },
+            id: { type: "string" },
+            orgId: { type: "string" },
+            actorPrincipalId: { type: "string" },
+            label: { type: ["string", "null"] },
+            tokenPrefix: { type: "string" },
+            scopes: { type: "array", items: { type: "string" } },
+            livemode: { type: "boolean" },
+            expiresAt: { type: "string", format: "date-time" },
+            usedAt: { type: ["string", "null"], format: "date-time" },
+            usedByPrincipalId: { type: ["string", "null"] },
+            createdAt: { type: "string", format: "date-time" },
+            updatedAt: { type: "string", format: "date-time" },
+            secret: { type: "string", description: "One-time sponsor-token secret. Store only long enough to send it to the bootstrap agent." },
+            requestId: { type: "string" },
+          },
+        }, {
+          object: "agent_bootstrap_token",
+          id: "agtok_example",
+          orgId: "org_example",
+          actorPrincipalId: "user_example",
+          label: "research-agent",
+          tokenPrefix: "agtok_example",
+          scopes: ["read:sec"],
+          livemode: false,
+          expiresAt: "2026-03-19T12:15:00.000Z",
+          usedAt: null,
+          usedByPrincipalId: null,
+          createdAt: "2026-03-19T12:00:00.000Z",
+          updatedAt: "2026-03-19T12:00:00.000Z",
+          secret: "agtok_example_secret_returned_once",
+          requestId: "req_example_123",
+        }, "Sponsor token issued. The secret is returned once.", "201"),
+      },
     },
     "/v1/agent/bootstrap": {
-      post: { summary: "Exchange a sponsor token for the first org-scoped API key, billing snapshot, limits, and MCP install metadata" },
+      post: {
+        summary: "Exchange a sponsor token for the first org-scoped API key, billing snapshot, limits, and MCP install metadata",
+        ...inlineJsonRequestBody({
+          type: "object",
+          additionalProperties: false,
+          required: ["token"],
+          properties: {
+            token: { type: "string", minLength: 1, description: "Short-lived, single-use sponsor token returned by POST /v1/agent/bootstrap_tokens." },
+            label: { type: ["string", "null"], description: "Optional label for the issued API key." },
+            scopes: { type: "array", items: { type: "string" }, description: "Optional requested scopes; the self-serve exchange is limited to read:sec." },
+          },
+        }, { token: "agtok_example_sponsor_token", label: "research-agent", scopes: ["read:sec"] }, "This exchange is intentionally pre-auth. Do not send an API key or bearer token; submit the sponsor token in the JSON body."),
+        ...inlineJsonResponse({
+          type: "object",
+          required: ["object", "requestId", "organization", "apiKey", "billing", "limits", "distribution", "sponsorToken"],
+          properties: {
+            object: { type: "string", const: "agent_bootstrap" },
+            requestId: { type: "string" },
+            organization: { type: "object" },
+            apiKey: { type: "object" },
+            billing: { type: "object" },
+            limits: { type: "object" },
+            distribution: { type: "object" },
+            sponsorToken: { type: "object" },
+          },
+        }, {
+          object: "agent_bootstrap",
+          requestId: "req_example_123",
+          organization: {},
+          apiKey: {},
+          billing: {},
+          limits: {},
+          distribution: {},
+          sponsorToken: {},
+        }, "Sponsor token exchanged and API key issued.", "201"),
+      },
     },
     "/v1/dashboard/overview": {
       get: {
@@ -2541,10 +2856,95 @@ export const openApiDocument = {
       post: { summary: "Register an email for the free alerts tier (idempotent lead capture)" },
     },
     "/v1/embed/feed": {
-      get: { summary: "Public embeddable reverse-chronological situations feed for third-party sites (JSON, cacheable, CORS-enabled)" },
+      get: {
+        summary: "Public embeddable reverse-chronological situations feed for third-party sites (JSON, cacheable, CORS-enabled)",
+        parameters: publicEmbedLegacyFeedParameters,
+      },
+    },
+    "/v1/embed/situations/issues": {
+      get: {
+        tags: ["Embed"],
+        summary: "Public capped Special Situations Digest issue archive",
+        description: "Anonymous, cacheable archive index for published Special Situations Digest issues. The index omits member situation rows while preserving issue metadata, source ids, and publication dates.",
+        parameters: [
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 24, default: 10 } },
+        ],
+        ...jsonResponse("SituationWeeklyIssueList"),
+      },
+    },
+    "/v1/embed/situations/issues/{issue}": {
+      get: {
+        tags: ["Embed"],
+        summary: "Public Special Situations Digest issue detail by number or slug",
+        description: "Anonymous, cacheable detail for one published Special Situations Digest issue. The response is the frozen public issue snapshot with provider-owned and market-plane internals omitted by the route projection.",
+        parameters: [{ name: "issue", in: "path", required: true, schema: { type: "string" } }],
+        ...jsonResponse("SituationWeeklyIssue"),
+      },
+    },
+    "/v1/embed/situations/{id}": {
+      get: {
+        tags: ["Embed"],
+        summary: "Public redacted situation detail used by secapi.ai situation permalinks and embeddable discovery surfaces",
+        description: "Anonymous, cacheable detail surface for recent public situations. The response matches the implementation's public projection: provider-owned keys are omitted and verification internals are redacted.",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string", pattern: "^sit_[a-f0-9]{20}$" }, description: "Canonical public situation id." },
+        ],
+        ...jsonResponse("PublicSituationDetail"),
+      },
     },
     "/v1/embed/widget.js": {
       get: { summary: "Public embeddable feed widget script that renders the situations feed into a host element" },
+    },
+    "/v1/embed/situations": {
+      get: {
+        tags: ["Embed"],
+        summary: "Public capped Special Situations list for logged-out experiences",
+        description: "Anonymous, recent-only public projection. Includes SEC filing accessions and safe public citation provenance while keeping provider keys, extraction trace ids, model versions, confidence/cross-validation telemetry, prompts, and raw provenance metadata out of the response.",
+        parameters: publicEmbedSituationListParameters,
+        ...jsonResponse("PublicSituationList"),
+      },
+    },
+    "/v1/embed/situations/feed": {
+      get: {
+        tags: ["Embed"],
+        summary: "Public capped Special Situations event feed with safe filing provenance",
+        description: "Anonymous recent event feed for embedded/public UI surfaces. Event provenance includes SEC accession, SEC filing URL when public-safe, and citation span coordinates when available.",
+        parameters: publicEmbedSituationFeedParameters,
+        ...jsonResponse("PublicSituationFeedItemList"),
+      },
+    },
+    "/v1/embed/situations/feed.rss": {
+      get: {
+        tags: ["Embed"],
+        summary: "Public RSS feed of recent Special Situations events",
+        parameters: publicEmbedSituationFeedParameters.filter((parameter) => parameter.name !== "cursor" && parameter.name !== "limit"),
+        responses: {
+          "200": {
+            description: "RSS XML feed of public situation events",
+            content: { "application/rss+xml": { schema: { type: "string" } } },
+          },
+        },
+      },
+    },
+    "/v1/embed/situations/stats": {
+      get: {
+        tags: ["Embed"],
+        summary: "Public recent-window Special Situations counts by type/status/sector/market cap",
+        ...jsonResponse("SituationStats"),
+      },
+    },
+    "/v1/embed/situations/{situation_id}/export": {
+      get: {
+        tags: ["Embed"],
+        summary: "Public Markdown Copy-for-LLM brief for one recent Special Situation",
+        parameters: [{ name: "situation_id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": {
+            description: "Markdown situation brief",
+            content: { "text/markdown": { schema: { type: "string" } } },
+          },
+        },
+      },
     },
     "/v1/delivery/unsubscribe": {
       get: {
@@ -2630,16 +3030,16 @@ export const openApiDocument = {
     "/v1/stream/ws": {
       get: {
         summary: "Upgrade to a WebSocket connection for delivery event streaming",
-        description: "Upgrades the HTTP connection to a WebSocket. Clients must supply a short-lived signed `ticket` query parameter minted from `POST /v1/stream/tickets`. Connections are capped by plan but are not separately billable in v1. Delivered events use the same delivery-event billing family as stream polling and are idempotent per subscription and event. The current filing producer emits `filing.published` frames with optional form/ticker filtering and cursor-based replay.",
+        description: "Upgrades an active WebSocket stream subscription to a WebSocket connection. Clients must supply that subscription's `stream_id` and authenticate with either a short-lived signed `ticket` minted from `POST /v1/stream/tickets` or the `x-api-key` header. Connections are capped by plan but are not separately billable in v1. Delivered events use the same delivery-event billing family as stream polling and are idempotent per subscription and event.",
         parameters: [
-          { name: "ticket", in: "query", schema: { type: "string" }, description: "Short-lived signed stream ticket minted from `POST /v1/stream/tickets`." },
-          { name: "forms", in: "query", schema: { type: "string" }, description: "Comma-separated form types to filter (e.g. '10-K,8-K'). Case-insensitive." },
-          { name: "tickers", in: "query", schema: { type: "string" }, description: "Comma-separated tickers to filter (e.g. 'AAPL,MSFT'). Case-insensitive." },
-          { name: "cursor", in: "query", schema: { type: "string" }, description: "Resume from a previous event cursor (e.g. 'sevt_...'). Events after this cursor are replayed on connect." },
+          { name: "stream_id", in: "query", required: true, schema: { type: "string" }, description: "ID of an active stream subscription configured for WebSocket delivery." },
+          { name: "ticket", in: "query", required: false, schema: { type: "string" }, description: "Short-lived signed stream ticket minted from `POST /v1/stream/tickets`. Provide this or the `x-api-key` header." },
+          { name: "x-api-key", in: "header", required: false, schema: { type: "string" }, description: "API key for the WebSocket upgrade. Provide this or a short-lived `ticket` query parameter." },
+          { name: "cursor", in: "query", required: false, schema: { type: "string" }, description: "Resume delivery after a previously observed stream cursor. Events after this cursor are replayed on connect." },
         ],
         responses: {
           "101": { description: "WebSocket upgrade successful. Server sends JSON frames such as connected, filing.published, pong, filters_updated, and rate_limited." },
-          "401": { description: "Missing or invalid stream ticket" },
+          "401": { description: "Missing or invalid stream ticket or API key" },
           "429": { description: "Per-organization connection limit exceeded" },
           "503": { description: "Global connection capacity exceeded" },
         },
@@ -3179,6 +3579,66 @@ export const openApiDocument = {
     "/v1/companies/subsidiaries": {
       get: { summary: "Return the list of subsidiaries extracted from the latest 10-K Exhibit 21 for a given entity" },
     },
+    "/v1/companies/audit-fees": {
+      get: {
+        summary: "Return principal-accountant fee rows extracted from the latest DEF 14A or 10-K for an issuer",
+        parameters: [
+          { name: "ticker", in: "query", required: false, schema: { type: "string" }, description: "Issuer ticker. Provide ticker or cik; cik is preferable when ticker history matters." },
+          { name: "cik", in: "query", required: false, schema: { type: "string" }, description: "Issuer CIK. Provide ticker or cik; cik is preferable when ticker history matters." },
+        ],
+        ...inlineJsonResponse({
+          type: "object",
+          additionalProperties: true,
+          required: ["object", "data", "accessionNumber", "filingDate", "sourceForm", "lineage", "requestId"],
+          properties: {
+            object: { type: "string", const: "list" },
+            data: {
+              type: "array",
+              description: "Parsed fee rows. Empty when no eligible filing or fee table is found.",
+              items: {
+                type: "object",
+                required: ["object", "category", "amount", "rawText"],
+                properties: {
+                  object: { type: "string", const: "audit_fee_entry" },
+                  category: { type: "string", description: "Parser-assigned fee category from the filing table." },
+                  amount: { type: ["number", "null"], description: "First parseable dollar amount for the category, when available." },
+                  rawText: { type: "string", description: "Source table text used to derive the category and amount." },
+                },
+              },
+            },
+            accessionNumber: { type: ["string", "null"], description: "Accession number of the filing selected for extraction." },
+            filingDate: { type: ["string", "null"], description: "Filing date of the filing selected for extraction." },
+            sourceForm: { type: ["string", "null"], description: "DEF 14A when available; otherwise the latest 10-K." },
+            note: { type: "string", description: "Explanation when no eligible filing or audit-fee table is found." },
+            lineage: {
+              type: "object",
+              required: ["sources", "canonical", "surface"],
+              properties: {
+                sources: { type: "array", items: { type: "string" }, example: ["sec_edgar"] },
+                canonical: { type: "boolean", const: true },
+                surface: { type: "string", const: "companies" },
+              },
+            },
+            requestId: { type: "string" },
+            traceparent: { type: "string" },
+          },
+        }, {
+          object: "list",
+          data: [{
+            object: "audit_fee_entry",
+            category: "Audit Fees",
+            amount: 25000000,
+            rawText: "Audit Fees: $25,000,000",
+          }],
+          accessionNumber: "0000320193-25-000079",
+          filingDate: "2025-10-31",
+          sourceForm: "DEF 14A",
+          lineage: { sources: ["sec_edgar"], canonical: true, surface: "companies" },
+          requestId: "req_example_audit_fees",
+          traceparent: "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",
+        }, "Audit-fee rows with the selected filing identity and SEC EDGAR lineage."),
+      },
+    },
     "/v1/events/ma": {
       get: {
         summary: "Return SEC-native M&A events inferred from public-company filings and relevant exhibits",
@@ -3649,13 +4109,6 @@ export const openApiDocument = {
         ...jsonFactorResponse("FactorCorrelationList"),
       },
     },
-    "/v1/factors/screen": {
-      get: {
-        summary: "Return factor screens ranked by recent strength so agents can run factor-rotation and cross-factor ranking workflows",
-        parameters: factorResponseParams(),
-        ...jsonFactorResponse("FactorReturnList"),
-      },
-    },
     "/v1/factors/extreme-moves": {
       get: {
         summary: "Return factor moves ranked by unusual z-score or absolute return with direction, threshold, and trust metadata",
@@ -3898,14 +4351,6 @@ export const openApiDocument = {
         parameters: factorResponseParams(),
         ...jsonRequestBody("FactorStrategyRequest"),
         ...jsonFactorResponse("FactorRotationStrategy"),
-      },
-    },
-    "/v1/strategies/regime-screen": {
-      post: {
-        summary: "Return regime-aware security screens with factor, macro, and filing-aware filters",
-        parameters: factorResponseParams(),
-        ...jsonRequestBody("FactorStrategyRequest"),
-        ...jsonFactorResponse("FactorRegimeScreen"),
       },
     },
     "/v1/intelligence/query": {
@@ -4492,6 +4937,7 @@ export const openApiDocument = {
           { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100 } },
           { name: "view", in: "query", schema: { type: "string", enum: ["default", "compact", "agent"] }, description: "Search response shape. Pass agent to drop score and retrievalMode while preserving citation fields; compact is accepted for response-format consistency and currently matches the default search rows. Invalid values return invalid_query_parameter with details.acceptedValues." },
         ],
+        ...inlineJsonResponse(semanticSearchResponseSchema, semanticSearchResponseExample, "Semantic search results with request tracing metadata."),
       },
     },
     "/v1/advisers": {
@@ -4502,16 +4948,6 @@ export const openApiDocument = {
           { name: "cik", in: "query", schema: { type: "string" } },
           { name: "state", in: "query", schema: { type: "string" } },
           { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 50 } },
-        ],
-      },
-    },
-    "/v1/market/financials": {
-      get: {
-        summary: "Financial statements (income, balance sheet, cash flow) for a ticker via SEC API market data",
-        parameters: [
-          { name: "ticker", in: "query", required: true, schema: { type: "string" } },
-          { name: "timeframe", in: "query", schema: { type: "string", enum: ["annual", "quarterly"] } },
-          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100 } },
         ],
       },
     },
@@ -4740,6 +5176,78 @@ export const openApiDocument = {
         ...jsonResponseOneOf(["SituationList", "SituationStrippedList"]),
       },
     },
+    "/v1/situations/watchlists": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "List situation-scoped watchlist monitors for the current organization",
+        parameters: [
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 25 } },
+          { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0 }, description: "Numeric monitor offset from a previous page." },
+        ],
+      },
+      post: {
+        tags: ["Special Situations"],
+        summary: "Create a situation-scoped watchlist monitor",
+        responses: {
+          "201": {
+            description: "Situation-scoped watchlist monitor.",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["object", "id", "orgId", "name", "query", "filters", "searchMode", "webhookUrl", "delivery", "isActive", "lastCheckedAt", "createdAt", "updatedAt"],
+                  properties: {
+                    object: { type: "string", enum: ["monitor"] },
+                    id: { type: "string" },
+                    orgId: { type: "string" },
+                    name: { type: "string" },
+                    query: { type: "string" },
+                    filters: { type: "object", additionalProperties: true },
+                    searchMode: { type: "string", enum: ["situation"] },
+                    webhookUrl: { type: ["string", "null"] },
+                    delivery: {
+                      type: "object",
+                      required: ["type", "config", "status"],
+                      properties: {
+                        type: { type: "string", enum: ["webhook", "email"] },
+                        config: { type: "object", additionalProperties: true },
+                        status: { type: "string" },
+                      },
+                    },
+                    isActive: { type: "boolean" },
+                    lastCheckedAt: { type: ["string", "null"], format: "date-time" },
+                    createdAt: { type: "string", format: "date-time" },
+                    updatedAt: { type: "string", format: "date-time" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    "/v1/situations/watchlists/{monitor_id}": {
+      get: {
+        tags: ["Special Situations"],
+        summary: "Retrieve a situation-scoped watchlist monitor by id",
+        parameters: [{ name: "monitor_id", in: "path", required: true, schema: { type: "string" } }],
+      },
+      delete: {
+        tags: ["Special Situations"],
+        summary: "Deactivate a situation-scoped watchlist monitor",
+        parameters: [{ name: "monitor_id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": {
+            description: "Deactivated situation-scoped watchlist monitor.",
+            content: {
+              "application/json": {
+                schema: { type: "object" },
+              },
+            },
+          },
+        },
+      },
+    },
     "/v1/situations/issues": {
       get: {
         tags: ["Special Situations"],
@@ -4766,6 +5274,7 @@ export const openApiDocument = {
           { name: "types", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated situation_type values." },
           { name: "categories", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated filing_event_category values." },
           { name: "tickers", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated tickers." },
+          { name: "country", in: "query", required: false, schema: { type: "string" }, description: "ISO 3166-1 alpha-2 country filter." },
           { name: "since", in: "query", required: false, schema: { type: "string" }, description: "Lower bound (ISO datetime) on event time." },
           { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 9007199254740991, default: 0 } },
           { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
@@ -4782,6 +5291,7 @@ export const openApiDocument = {
           { name: "types", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated situation_type values." },
           { name: "categories", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated filing_event_category values." },
           { name: "tickers", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated tickers." },
+          { name: "country", in: "query", required: false, schema: { type: "string" }, description: "ISO 3166-1 alpha-2 country filter." },
           { name: "since", in: "query", required: false, schema: { type: "string" }, description: "Lower bound (ISO datetime) on event time." },
         ],
         responses: {
@@ -4897,6 +5407,192 @@ export const openApiDocument = {
           { name: "enrich", in: "query", required: false, schema: { type: "string", enum: ["true", "false"], default: "true" }, description: "When false, returns the minimal stripped projection. Billed identically." },
         ],
         ...jsonResponseOneOf(["SituationDetail", "SituationStripped"]),
+      },
+    },
+    // ----- Fund letters plane (Track A routes; Track D search/changes) -----
+    // Dormant behind OMNI_FUND_LETTERS_ENABLED: every endpoint 404s until the
+    // golden-set eval + shadow soak pass. /search, /semantic, and /changes
+    // serve the Track D engines (Typesense/Pinecone with Postgres fallbacks,
+    // keyset event feed); meter classes and plan gating were live from Track A.
+    "/v1/fund-letters": {
+      get: {
+        tags: ["Fund Letters"],
+        summary: "List investor letters from hedge funds, partnerships, and registered funds, filterable by manager, fund, company, period, source, and distribution tier.",
+        description: "view=compact returns the trimmed FundLetterCompactList projection (billed identically); view=agent currently equals the default view.",
+        parameters: fundLetterListParameters,
+        ...jsonResponseOneOf(["FundLetterList", "FundLetterCompactList"]),
+      },
+    },
+    "/v1/fund-letters/search": {
+      get: {
+        tags: ["Fund Letters"],
+        summary: "Full-text search over letter bodies; hits carry page-anchored highlights.",
+        description: "Metered as fund_letter_search. Results are a relevance-ranked top-N (hasMore is always false; raise limit or narrow filters to deepen recall). Every highlight anchor verifies against /document?format=markdown bytes. When the full-text engine is unavailable the response degrades to Postgres lexical search, reported via degradedState.",
+        parameters: [
+          { name: "q", in: "query", required: true, schema: { type: "string" }, description: "Full-text query over letter bodies." },
+          ...fundLetterSearchFilterParameters,
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 10 } },
+        ],
+        ...jsonResponse("FundLetterSearchHitList"),
+      },
+    },
+    "/v1/fund-letters/semantic": {
+      get: {
+        tags: ["Fund Letters"],
+        summary: "Semantic (vector) search over letter content; hits carry similarity scores, matched chunks, and page anchors.",
+        description: "Metered as fund_letter_semantic; paid plans only. Results are a relevance-ranked top-N (hasMore is always false). third_party-distribution letters return snippet-capped chunks (their /document is not distributable). On vector-engine failure the response degrades to lexical hits (score 0), reported via degradedState.",
+        parameters: [
+          { name: "q", in: "query", required: true, schema: { type: "string" }, description: "Natural-language query." },
+          { name: "top_k", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 10 } },
+          ...fundLetterSearchFilterParameters,
+        ],
+        ...jsonResponse("FundLetterSemanticHitList"),
+      },
+    },
+    "/v1/fund-letters/changes": {
+      get: {
+        tags: ["Fund Letters"],
+        summary: "Keyset-paginated delta feed of fund-letter events (letter.published, letter.updated, letter.superseded, thesis.extracted, manager.added). Never response-cached.",
+        description: "Metered as fund_letter_lookup. The cursor is an opaque keyset token minted by this endpoint (never an offset); malformed cursors 400 as invalid_cursor. nextCursor pins the last returned row whenever the page is non-empty, so pollers resume from it regardless of hasMore.",
+        parameters: [
+          { name: "types", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated change types." },
+          { name: "since", in: "query", required: false, schema: { type: "string" }, description: "Only events created at or after this ISO date/datetime." },
+          { name: "ticker", in: "query", required: false, schema: { type: "string" }, description: "Events tagged with this ticker." },
+          { name: "manager_id", in: "query", required: false, schema: { type: "string" }, description: "mgr_-prefixed manager id." },
+          { name: "fund_id", in: "query", required: false, schema: { type: "string" }, description: "fnd_-prefixed fund id." },
+          { name: "cik", in: "query", required: false, schema: { type: "string" }, description: "Events tagged with this CIK." },
+          { name: "cursor", in: "query", required: false, schema: { type: "string" }, description: "Opaque keyset cursor from a prior page." },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 10 } },
+        ],
+        ...jsonResponse("FundLetterChangeList"),
+      },
+    },
+    "/v1/fund-letters/managers": {
+      get: {
+        tags: ["Fund Letters"],
+        summary: "List letter-publishing managers (firms) with coverage stats: letters, funds, companies, theses, period range, and cadence.",
+        parameters: [
+          { name: "q", in: "query", required: false, schema: { type: "string" }, description: "Case-insensitive substring match on the firm name." },
+          { name: "strategy", in: "query", required: false, schema: { type: "string" }, description: "Strategy approach filter (e.g. long_short_equity)." },
+          { name: "has_13f", in: "query", required: false, schema: { type: "string", enum: ["true", "false"] }, description: "Only managers with a linked 13F adviser." },
+          { name: "min_letters", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100000 } },
+          { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 9007199254740991, default: 0 } },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+        ],
+        ...jsonResponse("FundLetterManagerList"),
+      },
+    },
+    "/v1/fund-letters/managers/{manager_id}": {
+      get: {
+        tags: ["Fund Letters"],
+        summary: "Retrieve one manager profile. Merged manager IDs resolve forever via aliases; the response carries the canonical id plus requestedId when they differ.",
+        parameters: [
+          { name: "manager_id", in: "path", required: true, schema: { type: "string", pattern: "^mgr_[0-9a-f]{16}$" } },
+        ],
+        ...jsonResponse("FundLetterManager"),
+      },
+    },
+    "/v1/fund-letters/managers/{manager_id}/overview": {
+      get: {
+        tags: ["Fund Letters"],
+        summary: "Fund Overview: one token-efficient briefing per manager — canonical name, description, founders, website, coverage counts, and the latest letter's highlights with up to 5 headline theses.",
+        description: "Metered as fund_letter_lookup. The manager twin of GET /v1/companies/overview: identity and latest-letter highlights only — no page markdown, no anchors, no full thesis bodies (follow links.letters / links.theses for those). latestLetter is null for a manager with no canonical letters yet. Merged manager IDs resolve forever via aliases; the response carries the canonical id plus requestedId when they differ.",
+        parameters: [
+          { name: "manager_id", in: "path", required: true, schema: { type: "string", pattern: "^mgr_[0-9a-f]{16}$" } },
+        ],
+        ...jsonResponse("FundManagerOverview"),
+      },
+    },
+    "/v1/fund-letters/funds": {
+      get: {
+        tags: ["Fund Letters"],
+        summary: "List funds that publish letters, with per-fund letter counts.",
+        parameters: [
+          { name: "manager_id", in: "query", required: false, schema: { type: "string" } },
+          { name: "q", in: "query", required: false, schema: { type: "string" }, description: "Case-insensitive substring match on the fund name." },
+          { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 9007199254740991, default: 0 } },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+        ],
+        ...jsonResponse("FundLetterFundList"),
+      },
+    },
+    "/v1/fund-letters/funds/{fund_id}": {
+      get: {
+        tags: ["Fund Letters"],
+        summary: "Retrieve one fund. Merged fund IDs resolve forever via aliases; the response carries the canonical id plus requestedId when they differ.",
+        parameters: [
+          { name: "fund_id", in: "path", required: true, schema: { type: "string", pattern: "^fnd_[0-9a-f]{16}$" } },
+        ],
+        ...jsonResponse("FundLetterFund"),
+      },
+    },
+    "/v1/fund-letters/companies": {
+      get: {
+        tags: ["Fund Letters"],
+        summary: "Company coverage index: every company with at least one extracted thesis, with thesis/manager/letter counts and the latest stance.",
+        parameters: [
+          { name: "ticker", in: "query", required: false, schema: { type: "string" } },
+          { name: "cik", in: "query", required: false, schema: { type: "string" } },
+          { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 9007199254740991, default: 0 } },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+        ],
+        ...jsonResponse("FundLetterCompanyCoverageList"),
+      },
+    },
+    "/v1/fund-letters/theses": {
+      get: {
+        tags: ["Fund Letters"],
+        summary: "Cross-cutting thesis screen: structured per-company extractions (relationship, stance, conviction, narratives, verbatim anchored quotes) across all letters.",
+        parameters: [
+          { name: "ticker", in: "query", required: false, schema: { type: "string" } },
+          { name: "cik", in: "query", required: false, schema: { type: "string" } },
+          { name: "manager_id", in: "query", required: false, schema: { type: "string" } },
+          { name: "fund_id", in: "query", required: false, schema: { type: "string" } },
+          { name: "letter_id", in: "query", required: false, schema: { type: "string", pattern: "^ltr_[0-9a-f]{16}$" } },
+          { name: "relationship", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated relationship values (long, short, new_position, added, trimmed, sold, exited, watchlist, negative_research, issuer)." },
+          { name: "stance", in: "query", required: false, schema: { type: "string", enum: ["bullish", "bearish", "mixed", "neutral"] } },
+          { name: "conviction", in: "query", required: false, schema: { type: "string", enum: ["high", "medium", "low", "unknown"] } },
+          { name: "period", in: "query", required: false, schema: { type: "string", pattern: "^\\d{4}Q[1-4]$" }, description: "Exact reporting period (YYYYQn)." },
+          { name: "period_from", in: "query", required: false, schema: { type: "string", pattern: "^\\d{4}Q[1-4]$" } },
+          { name: "period_to", in: "query", required: false, schema: { type: "string", pattern: "^\\d{4}Q[1-4]$" } },
+          { name: "since", in: "query", required: false, schema: { type: "string" }, description: "Only theses updated at or after this ISO date/datetime. Requests with since are never response-cached." },
+          { name: "cursor", in: "query", required: false, schema: { type: "integer", minimum: 0, maximum: 9007199254740991, default: 0 } },
+          { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
+        ],
+        ...jsonResponse("FundLetterThesisList"),
+      },
+    },
+    "/v1/fund-letters/{letter_id}": {
+      get: {
+        tags: ["Fund Letters"],
+        summary: "Retrieve one letter with letter-level narratives, performance figures, and inline theses (capped at 25; thesisCount carries the total). Superseded/merged IDs resolve forever via aliases.",
+        description: "Detail never inlines page markdown (that is the /document endpoint, metered separately), so view=agent and view=compact currently equal the default detail view.",
+        parameters: [
+          { name: "letter_id", in: "path", required: true, schema: { type: "string", pattern: "^ltr_[0-9a-f]{16}$" } },
+          { name: "view", in: "query", required: false, schema: { type: "string", enum: ["default", "compact", "agent"] } },
+        ],
+        ...jsonResponse("FundLetterDetail"),
+      },
+    },
+    "/v1/fund-letters/{letter_id}/document": {
+      get: {
+        tags: ["Fund Letters"],
+        summary: "Retrieve the original letter document (format=pdf, 302 redirect) or page-segmented markdown whose bytes verify every anchor (format=markdown).",
+        description: "Distribution rules: public_record and fund_published letters serve the full document; third_party letters return 403 document_not_distributable with a sourceUrl hint. EDGAR-sourced letters redirect to the EDGAR primary document. `?sha=` retrieves a superseded source variant's markdown so historical anchors always verify — only when the canonical letter's distribution permits document serving.",
+        parameters: [
+          { name: "letter_id", in: "path", required: true, schema: { type: "string", pattern: "^ltr_[0-9a-f]{16}$" } },
+          { name: "format", in: "query", required: false, schema: { type: "string", enum: ["pdf", "markdown"], default: "pdf" } },
+          { name: "sha", in: "query", required: false, schema: { type: "string", pattern: "^[0-9a-f]{64}$" }, description: "Superseded source-variant sha256 (format=markdown only)." },
+        ],
+        responses: {
+          "200": {
+            description: "Page-segmented markdown (format=markdown), byte-identical to the stored anchor substrate",
+            content: { "application/json": { schema: schemaRef("FundLetterDocumentMarkdown") } },
+          },
+          "302": {
+            description: "Redirect to the original document: a presigned R2 URL for web-sourced PDFs, or the EDGAR primary document URL for EDGAR-sourced letters",
+          },
+        },
       },
     },
   },

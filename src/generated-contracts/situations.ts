@@ -367,6 +367,66 @@ export const situationDetailSchema = situationSchema.extend({
 
 export type SituationDetail = z.infer<typeof situationDetailSchema>
 
+const publicSituationIdSchema = z.string().regex(/^sit_[a-f0-9]{20}$/)
+
+export const embedSituationSchema = z.object({
+  object: z.literal("situation"),
+  id: publicSituationIdSchema,
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  livemode: z.boolean(),
+  type: situationTypeSchema,
+  subtype: situationSubtypeSchema.nullable(),
+  status: situationStatusSchema,
+  statusUpdatedAt: z.string(),
+  ticker: z.string().nullable(),
+  cik: z.string(),
+  entityName: z.string(),
+  exchange: z.string().nullable().optional(),
+  country: z.string().nullable().optional(),
+  sector: z.string().nullable().optional(),
+  headline: z.string(),
+  summaryMd: z.string().nullable(),
+  businessProfile: z.string().nullable(),
+  terms: situationTermsSchema,
+  keyDates: situationKeyDatesSchema,
+  market: situationMarketContextSchema,
+  sourceAccessions: z.array(z.string()).default([]),
+  eventCount: z.number().int().nonnegative(),
+  latestEventAt: z.string().nullable(),
+  verification: dilutionVerificationSchema,
+})
+
+export type EmbedSituation = z.infer<typeof embedSituationSchema>
+
+export const embedSituationEventSchema = z.object({
+  object: z.literal("situation_event"),
+  id: z.string(),
+  createdAt: z.string(),
+  livemode: z.boolean(),
+  situationId: publicSituationIdSchema,
+  occurredAt: z.string(),
+  accessionNumber: z.string(),
+  formType: z.string(),
+  eightKItems: z.array(z.string()).default([]),
+  category: filingEventCategorySchema.nullable(),
+  title: z.string(),
+  summaryMd: z.string().nullable(),
+  statusBefore: situationStatusSchema.nullable(),
+  statusAfter: situationStatusSchema.nullable(),
+  documentUrl: z.string().url().nullable(),
+  verification: dilutionVerificationSchema,
+})
+
+export type EmbedSituationEvent = z.infer<typeof embedSituationEventSchema>
+
+export const embedSituationDetailSchema = embedSituationSchema.extend({
+  /** Public redacted per-filing timeline, oldest first. */
+  events: z.array(embedSituationEventSchema).default([]),
+})
+
+export type EmbedSituationDetail = z.infer<typeof embedSituationDetailSchema>
+
 /** Immutable, numbered weekly publication made from frozen situation snapshots. */
 export const situationWeeklyIssueSituationSchema = z.object({
   id: z.string(),
@@ -432,6 +492,140 @@ export const situationWeeklyIssueListSchema = z.object({
 })
 
 export type SituationWeeklyIssueList = z.infer<typeof situationWeeklyIssueListSchema>
+
+// ---------------------------------------------------------------------------
+// Public embed projection
+//
+// Additive, anonymous-safe shape for /v1/embed/situations*. It deliberately
+// does not expose provider keys, extraction trace ids, model versions,
+// confidence/cross-validation telemetry, raw provenance JSON, prompts, or
+// vendor/internal metadata. Missing public evidence is represented with nulls
+// on the specific nullable field and empty arrays for absent collections.
+// ---------------------------------------------------------------------------
+
+export const publicSituationVerificationSchema = z.object({
+  sourceSpan: z.null(),
+  extractionTraceId: z.null(),
+  confidence: z.null(),
+  crossValidations: z.array(z.unknown()).max(0).default([]),
+  modelVersion: z.null(),
+  verifiedAt: z.null(),
+})
+
+export const publicSituationSourceFilingSchema = z.object({
+  accessionNumber: z.string(),
+  filingUrl: z.string().url().nullable(),
+  formType: z.string().nullable(),
+  filedAt: z.string().nullable(),
+  title: z.string().nullable(),
+})
+
+export const publicSituationCitationSchema = z.object({
+  claimPath: z.string(),
+  claim: z.string(),
+  accessionNumber: z.string(),
+  filingUrl: z.string().url().nullable(),
+  sourceSpan: z.string().nullable(),
+})
+
+export const publicSituationProvenanceSchema = z.object({
+  source: z.literal("sec.gov"),
+  sourceFilings: z.array(publicSituationSourceFilingSchema).default([]),
+  citations: z.array(publicSituationCitationSchema).default([]),
+})
+
+export const publicSituationEventSchema = z.object({
+  object: z.literal("situation_event"),
+  id: z.string(),
+  createdAt: z.string(),
+  livemode: z.boolean(),
+  situationId: z.string(),
+  occurredAt: z.string(),
+  accessionNumber: z.string(),
+  formType: z.string(),
+  eightKItems: z.array(z.string()).default([]),
+  category: filingEventCategorySchema.nullable(),
+  title: z.string(),
+  summaryMd: z.string().nullable().optional(),
+  statusBefore: situationStatusSchema.nullable(),
+  statusAfter: situationStatusSchema.nullable(),
+  documentUrl: z.string().url().nullable(),
+  verification: publicSituationVerificationSchema,
+  publicProvenance: publicSituationProvenanceSchema,
+})
+
+export const publicSituationSchema = z.object({
+  object: z.literal("situation"),
+  id: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  livemode: z.boolean(),
+  type: situationTypeSchema,
+  subtype: situationSubtypeSchema.nullable(),
+  status: situationStatusSchema,
+  statusUpdatedAt: z.string(),
+  ticker: z.string().nullable(),
+  cik: z.string(),
+  entityName: z.string(),
+  exchange: z.string().nullable().optional(),
+  country: z.string().nullable().optional(),
+  sector: z.string().nullable().optional(),
+  headline: z.string(),
+  summaryMd: z.string().nullable().optional(),
+  businessProfile: z.string().nullable().optional(),
+  terms: situationTermsSchema,
+  keyDates: situationKeyDatesSchema,
+  market: situationMarketContextSchema,
+  sourceAccessions: z.array(z.string()).default([]),
+  eventCount: z.number().int().nonnegative(),
+  latestEventAt: z.string().nullable(),
+  verification: publicSituationVerificationSchema,
+  publicProvenance: publicSituationProvenanceSchema,
+})
+
+export const publicSituationDetailSchema = publicSituationSchema.extend({
+  events: z.array(publicSituationEventSchema).default([]),
+})
+
+export const publicSituationListSchema = z.object({
+  object: z.literal("list"),
+  data: z.array(publicSituationSchema),
+  hasMore: z.boolean(),
+  nextCursor: z.string().nullable(),
+  generatedAt: z.string(),
+})
+
+export const publicSituationFeedItemSchema = z.object({
+  object: z.literal("situation_feed_item"),
+  event: publicSituationEventSchema,
+  situation: z.object({
+    id: z.string(),
+    type: situationTypeSchema,
+    subtype: situationSubtypeSchema.nullable(),
+    status: situationStatusSchema,
+    ticker: z.string().nullable(),
+    entityName: z.string(),
+    headline: z.string(),
+    summaryMd: z.string().nullable().optional(),
+    businessProfile: z.string().nullable().optional(),
+    market: situationMarketContextSchema,
+  }),
+})
+
+export const publicSituationFeedItemListSchema = z.object({
+  object: z.literal("list"),
+  data: z.array(publicSituationFeedItemSchema),
+  hasMore: z.boolean(),
+  nextCursor: z.string().nullable(),
+  generatedAt: z.string(),
+})
+
+export type PublicSituation = z.infer<typeof publicSituationSchema>
+export type PublicSituationDetail = z.infer<typeof publicSituationDetailSchema>
+export type PublicSituationEvent = z.infer<typeof publicSituationEventSchema>
+export type PublicSituationProvenance = z.infer<typeof publicSituationProvenanceSchema>
+export type PublicSituationList = z.infer<typeof publicSituationListSchema>
+export type PublicSituationFeedItemList = z.infer<typeof publicSituationFeedItemListSchema>
 
 // ---------------------------------------------------------------------------
 // Special Situations customer projections (additive, T3)
@@ -651,6 +845,7 @@ export const situationsFeedQuerySchema = z.object({
   types: commaListOf(situationTypeSchema),
   categories: commaListOf(filingEventCategorySchema),
   tickers: commaListOf(z.string()),
+  country: z.string().optional(),
   since: z.string().optional(),
   cursor: z.string().optional(),
   limit: z.number().int().min(1).max(100).optional(),
