@@ -953,8 +953,6 @@ describe("SecApiClient retry behavior", () => {
 
     await expect(client.factorHistoryCsv("MKT/US", { range: "max", retry: false })).resolves.toContain("VALUE")
     await expect(client.factorSparklinesCsv({ keys: ["VALUE", "MOMENTUM"], range: "1y", points: 32, retry: false })).resolves.toContain("VALUE")
-    await expect(client.factorValuationsCsv({ category: "style", weighting_mode: "short_leg_focus", retry: false })).resolves.toContain("rank,factor_key")
-    await expect(client.factorValuationStocksCsv({ factor: "VALUE", side: "winners", retry: false })).resolves.toContain("VALUE")
     await expect(client.factorBulkDownloadCsv({ keys: ["VALUE", "MOMENTUM"], lookback: "12m", retry: false })).resolves.toContain("VALUE")
 
     expect(seenUrls[0]).toContain("/v1/factors/history/MKT%2FUS?")
@@ -965,18 +963,10 @@ describe("SecApiClient retry behavior", () => {
     expect(seenUrls[1]).toContain("range=1y")
     expect(seenUrls[1]).toContain("points=32")
     expect(seenUrls[1]).toContain("format=csv")
-    expect(seenUrls[2]).toContain("/v1/factors/valuations?")
-    expect(seenUrls[2]).toContain("category=style")
-    expect(seenUrls[2]).toContain("weighting_mode=short_leg_focus")
+    expect(seenUrls[2]).toContain("/v1/factors/bulk-download?")
+    expect(seenUrls[2]).toContain("keys=VALUE%2CMOMENTUM")
+    expect(seenUrls[2]).toContain("lookback=12m")
     expect(seenUrls[2]).toContain("format=csv")
-    expect(seenUrls[3]).toContain("/v1/factors/valuations/stocks?")
-    expect(seenUrls[3]).toContain("factor=VALUE")
-    expect(seenUrls[3]).toContain("side=winners")
-    expect(seenUrls[3]).toContain("format=csv")
-    expect(seenUrls[4]).toContain("/v1/factors/bulk-download?")
-    expect(seenUrls[4]).toContain("keys=VALUE%2CMOMENTUM")
-    expect(seenUrls[4]).toContain("lookback=12m")
-    expect(seenUrls[4]).toContain("format=csv")
     expect(seenUrls.join("\n")).not.toContain("retry")
   })
 
@@ -1660,8 +1650,6 @@ describe("SecApiClient retry behavior", () => {
     await client.factorSparklines({ factors: ["MOMENTUM", "VALUE"], points: 32 })
     await client.factorExtremeMoves({ category: "style", window: "1d", lookback: "6m", direction: "up", minAbsZScore: 1.25, response_mode: "compact" })
     await client.factorExtremePairs({ factors: ["MOMENTUM", "VALUE"], window: "1m", lookback: "6m", direction: "factor1", sort: "abs_spread_return", minAbsZScore: 0.75, response_mode: "compact" })
-    await client.factorValuations({ factors: ["VALUE", "DIVIDEND_YIELD"], side: "tailwind", weighting_mode: "short_leg_focus", sort: "opportunity_score", response_mode: "compact" })
-    await client.factorValuationStocks({ factor: "VALUE", stance: "beneficiaries", weighting_mode: "long_short_equal", sort: "score", response_mode: "compact" })
     await client.factorPairs({ factor1: "MOMENTUM", factor2: "VALUE" })
     await client.factorPairHistory("MOM/US", "VAL/US", { range: "1y", response_mode: "compact" })
     await client.factorBulkDownload({ factors: ["MOMENTUM"], include: "series" })
@@ -1686,8 +1674,6 @@ describe("SecApiClient retry behavior", () => {
       "/v1/factors/sparklines",
       "/v1/factors/extreme-moves",
       "/v1/factors/extreme-pairs",
-      "/v1/factors/valuations",
-      "/v1/factors/valuations/stocks",
       "/v1/factors/pairs",
       "/v1/factors/pair-history/MOM%2FUS/VAL%2FUS",
       "/v1/factors/bulk-download",
@@ -1710,23 +1696,12 @@ describe("SecApiClient retry behavior", () => {
     expect(new URL(seen[3].url).searchParams.get("sort")).toBe("abs_spread_return")
     expect(new URL(seen[3].url).searchParams.get("minAbsZScore")).toBe("0.75")
     expect(new URL(seen[3].url).searchParams.get("response_mode")).toBe("compact")
-    expect(new URL(seen[4].url).searchParams.get("factors")).toBe("VALUE,DIVIDEND_YIELD")
-    expect(new URL(seen[4].url).searchParams.get("side")).toBe("tailwind")
-    expect(new URL(seen[4].url).searchParams.get("weighting_mode")).toBe("short_leg_focus")
-    expect(new URL(seen[4].url).searchParams.get("sort")).toBe("opportunity_score")
-    expect(new URL(seen[4].url).searchParams.get("response_mode")).toBe("compact")
-    expect(new URL(seen[5].url).searchParams.get("factor")).toBe("VALUE")
-    expect(new URL(seen[5].url).searchParams.get("stance")).toBe("beneficiaries")
-    expect(new URL(seen[5].url).searchParams.get("weighting_mode")).toBe("long_short_equal")
-    expect(new URL(seen[5].url).searchParams.get("sort")).toBe("score")
-    expect(new URL(seen[5].url).searchParams.get("response_mode")).toBe("compact")
-    expect(new URL(seen[7].url).searchParams.get("range")).toBe("1y")
-    expect(new URL(seen[8].url).searchParams.get("include")).toBe("series")
-    expect(new URL(seen[9].url).searchParams.get("response_mode")).toBe("compact")
-    expect(new URL(seen[11].url).searchParams.get("include")).toBe("trust")
-    expect(new URL(seen[12].url).searchParams.get("response_mode")).toBe("compact")
-    expect(seen.slice(9).map((entry) => entry.method)).toEqual(["POST", "POST", "POST", "POST"])
-    expect(seen[12].body).not.toContain("response_mode")
-    expect(seen[12].body).toContain("constraints")
+    expect(new URL(seen[5].url).searchParams.get("range")).toBe("1y")
+    expect(new URL(seen[6].url).searchParams.get("include")).toBe("series")
+    expect(new URL(seen[7].url).searchParams.get("response_mode")).toBe("compact")
+    expect(new URL(seen[10].url).searchParams.get("response_mode")).toBe("compact")
+    expect(seen.slice(7).map((entry) => entry.method)).toEqual(["POST", "POST", "POST", "POST"])
+    expect(seen[10].body).not.toContain("response_mode")
+    expect(seen[10].body).toContain("constraints")
   })
 })

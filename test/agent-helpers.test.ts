@@ -167,13 +167,16 @@ describe("SecApiClient agent helpers", () => {
     expect(rssUrl.searchParams.get("since")).toBe("2026-07-01T00:00:00.000Z")
   })
 
-  test("situations watch validates filters and creates a structured situation monitor", async () => {
-    const seenBodies: unknown[] = []
+  test("situations watch validates filters and creates API-key-compatible filter-only monitors", async () => {
+    const seenRequests: Array<{ path: string; body: unknown }> = []
     const client = new SecApiClient({
       apiKey: "test_key",
       telemetry: false,
-      fetch: async (_url, init) => {
-        seenBodies.push(JSON.parse(String(init?.body)))
+      fetch: async (url, init) => {
+        seenRequests.push({
+          path: new URL(String(url)).pathname,
+          body: JSON.parse(String(init?.body)),
+        })
         return jsonResponse({ ok: true })
       },
     })
@@ -181,18 +184,24 @@ describe("SecApiClient agent helpers", () => {
     await client.situations.watch({
       name: "M&A watch",
       filters: { types: ["merger"], statuses: ["pending"], tickers: ["AAPL"] },
-      delivery: { organizationWebhook: true },
     })
 
-    expect(seenBodies).toEqual([
+    expect(seenRequests).toEqual([
       {
-        name: "M&A watch",
-        query: "situations.watch",
-        searchMode: "situation",
-        filters: { types: ["merger"], statuses: ["pending"], tickers: ["AAPL"] },
-        delivery: { type: "webhook", config: { organizationEventFanout: true } },
+        path: "/v1/situations/watchlists",
+        body: {
+          name: "M&A watch",
+          query: "situations.watch",
+          searchMode: "situation",
+          filters: { types: ["merger"], statuses: ["pending"], tickers: ["AAPL"] },
+        },
       },
     ])
+    await expect(client.situations.watch({
+      name: "Webhook M&A watch",
+      filters: { types: ["merger"], statuses: ["pending"], tickers: ["AAPL"] },
+      delivery: { organizationWebhook: true },
+    })).rejects.toMatchObject({ code: "client_situation_watch_delivery_requires_bearer" })
     await expect(client.situations.watch({
       name: "Bad watch",
       filters: { statuses: ["not_a_status"] } as any,
@@ -205,10 +214,99 @@ describe("SecApiClient agent helpers", () => {
       filters: { types: ["merger"] },
       delivery: { email: "   " },
     })).rejects.toMatchObject({ code: "client_situation_watch_delivery_required" })
-    await expect(client.situations.watch({
-      filters: { types: ["merger"] },
-      delivery: undefined as any,
-    })).rejects.toMatchObject({ code: "client_situation_watch_delivery_required" })
+  })
+
+  test("situations watch delivery activation uses a bearer-only client", async () => {
+    const seenRequests: Array<{ path: string; authorization: string | null; apiKey: string | null; body: unknown }> = []
+    const client = new SecApiClient({
+      bearerToken: "human_bearer",
+      telemetry: false,
+      fetch: async (url, init) => {
+        const headers = new Headers(init?.headers)
+        seenRequests.push({
+          path: new URL(String(url)).pathname,
+          authorization: headers.get("Authorization"),
+          apiKey: headers.get("x-api-key"),
+          body: JSON.parse(String(init?.body)),
+        })
+        return jsonResponse({ ok: true })
+      },
+    })
+
+    await client.situations.watch({
+      name: "Webhook M&A watch",
+      filters: { types: ["merger"], statuses: ["pending"], tickers: ["AAPL"] },
+      delivery: { organizationWebhook: true },
+    })
+
+    expect(seenRequests).toEqual([
+      {
+        path: "/v1/situations/watchlists",
+        authorization: "Bearer human_bearer",
+        apiKey: null,
+        body: {
+          name: "Webhook M&A watch",
+          query: "situations.watch",
+          searchMode: "situation",
+          filters: { types: ["merger"], statuses: ["pending"], tickers: ["AAPL"] },
+          delivery: { type: "webhook", config: { organizationEventFanout: true } },
+        },
+      },
+    ])
+  })
+
+  test("situations watchlist namespace exposes list get create and delete aliases", async () => {
+    const seenRequests: Array<{ url: string; method?: string; body?: unknown }> = []
+    const client = new SecApiClient({
+      apiKey: "test_key",
+      telemetry: false,
+      fetch: async (url, init) => {
+        seenRequests.push({
+          url: String(url),
+          method: init?.method,
+          body: init?.body ? JSON.parse(String(init.body)) : undefined,
+        })
+        return jsonResponse({ ok: true })
+      },
+    })
+
+    await client.situations.watchlists({ limit: 10, cursor: "20" })
+    await client.situations.watchlist("mon/with spaces")
+    await client.situations.createWatchlist({
+      name: "  Deals  ",
+      filters: { types: ["merger"], tickers: [" AAPL "] },
+      startAt: "2026-07-13T00:00:00Z",
+    })
+    await client.situations.deleteWatchlist("mon/with spaces")
+
+    expect(seenRequests).toEqual([
+      {
+        url: "https://api.secapi.ai/v1/situations/watchlists?limit=10&cursor=20",
+        method: undefined,
+        body: undefined,
+      },
+      {
+        url: "https://api.secapi.ai/v1/situations/watchlists/mon%2Fwith%20spaces",
+        method: undefined,
+        body: undefined,
+      },
+      {
+        url: "https://api.secapi.ai/v1/situations/watchlists",
+        method: "POST",
+        body: {
+          name: "Deals",
+          query: "situations.watch",
+          searchMode: "situation",
+          filters: { types: ["merger"], tickers: ["AAPL"] },
+          startAt: "2026-07-13T00:00:00Z",
+        },
+      },
+      {
+        url: "https://api.secapi.ai/v1/situations/watchlists/mon%2Fwith%20spaces",
+        method: "DELETE",
+        body: undefined,
+      },
+    ])
   })
 
   test("loads auth and base URL from environment when constructor options are omitted", async () => {
@@ -537,7 +635,6 @@ describe("SecApiClient agent helpers", () => {
     await client.agentForm144({ ticker: "NVDA", limit: 5 })
     await client.agentSection({ ticker: "AAPL", form: "10-K", sectionKey: "item_1a", filing_year: 2025 })
     await client.semanticSearch({ q: "supply chain risk", ticker: "AAPL", form: "10-K", mode: "hybrid", limit: 5, view: "agent" })
-    await client.marketEarningsCalendar({ ticker: "AAPL", date_from: "2026-06-08", date_to: "2026-06-15" })
 
     expect(seenUrls[0]).toBe("https://api.secapi.ai/v1/filings/latest?ticker=AAPL&form=10-K&view=agent")
     expect(seenUrls[1]).toBe("https://api.secapi.ai/v1/statements/income_statement?ticker=AAPL&period=annual&limit=2&view=agent")
@@ -545,7 +642,26 @@ describe("SecApiClient agent helpers", () => {
     expect(seenUrls[3]).toBe("https://api.secapi.ai/v1/forms/144?ticker=NVDA&limit=5&view=agent")
     expect(seenUrls[4]).toBe("https://api.secapi.ai/v1/filings/latest/sections/item_1a?ticker=AAPL&form=10-K&filing_year=2025&view=agent")
     expect(seenUrls[5]).toBe("https://api.secapi.ai/v1/search/semantic?q=supply+chain+risk&ticker=AAPL&form=10-K&mode=hybrid&limit=5&view=agent")
-    expect(seenUrls[6]).toBe("https://api.secapi.ai/v1/market/earnings-calendar?ticker=AAPL&date_from=2026-06-08&date_to=2026-06-15")
+    expect("marketEarningsCalendar" in client).toBe(false)
+  })
+
+  test("public earnings intelligence helpers route to public paths", async () => {
+    const seenUrls: string[] = []
+    const client = new SecApiClient({
+      telemetry: false,
+      fetch: async (url) => {
+        seenUrls.push(String(url))
+        return jsonResponse({ ok: true })
+      },
+    })
+
+    await client.intelligenceEarningsPreview({ ticker: "AAPL", view: "compact" })
+    await client.earningsTranscripts({ ticker: "AAPL", limit: 3 })
+
+    expect(seenUrls).toEqual([
+      "https://api.secapi.ai/v1/intelligence/earnings-preview?ticker=AAPL&view=compact",
+      "https://api.secapi.ai/v1/earnings/transcripts?ticker=AAPL&limit=3",
+    ])
   })
 
   test("search helpers reach both Typesense full-text and vector endpoints", async () => {
@@ -1185,22 +1301,47 @@ describe("SecApiClient agent helpers", () => {
     expect(seen).toEqual(["https://api.secapi.ai/v1/situations/sit%2Fwith%20spaces/export"])
   })
 
-  test("public embed issue helpers route to the anonymous archive surface", async () => {
+  test("public embed situations helpers route to the anonymous surface", async () => {
     const seen: string[] = []
     const client = new SecApiClient({
       telemetry: false,
       fetch: async (url) => {
         seen.push(String(url))
+        if (String(url).endsWith("/export")) {
+          return new Response("# Public situation brief", {
+            status: 200,
+            headers: { "content-type": "text/markdown; charset=utf-8" },
+          })
+        }
+        if (String(url).includes("feed.rss")) {
+          return new Response("<rss />", {
+            status: 200,
+            headers: { "content-type": "application/rss+xml; charset=utf-8" },
+          })
+        }
         return jsonResponse({ object: "list", data: [], hasMore: false, nextCursor: null })
       },
     })
 
+    await client.embedSituations({ limit: 10, tickers: "AAPL" })
+    await client.embedSituationsFeed({ types: "merger", limit: 5 })
+    await client.embedSituationsFeedRss({ types: "merger" })
+    await client.embedSituationsStats()
     await client.embedSituationIssues({ limit: 12 })
     await client.embedSituationIssue("special/situations digest 22")
+    await client.embedSituationDetail("sit/with spaces")
+    const markdown = await client.embedSituationExport("sit/with spaces")
 
+    expect(markdown).toBe("# Public situation brief")
     expect(seen).toEqual([
+      "https://api.secapi.ai/v1/embed/situations?limit=10&tickers=AAPL",
+      "https://api.secapi.ai/v1/embed/situations/feed?types=merger&limit=5",
+      "https://api.secapi.ai/v1/embed/situations/feed.rss?types=merger",
+      "https://api.secapi.ai/v1/embed/situations/stats",
       "https://api.secapi.ai/v1/embed/situations/issues?limit=12",
       "https://api.secapi.ai/v1/embed/situations/issues/special%2Fsituations%20digest%2022",
+      "https://api.secapi.ai/v1/embed/situations/sit%2Fwith%20spaces",
+      "https://api.secapi.ai/v1/embed/situations/sit%2Fwith%20spaces/export",
     ])
   })
 

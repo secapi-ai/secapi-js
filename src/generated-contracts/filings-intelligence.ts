@@ -466,7 +466,7 @@ export const earningsTranscriptsQuerySchema = z.object({
 export type EarningsTranscriptsQuery = z.infer<typeof earningsTranscriptsQuerySchema>
 
 // ---------------------------------------------------------------------------
-// Structured guidance extraction (guidance.extracted; feeds the estimates plane)
+// Structured guidance extraction (guidance.extracted)
 // ---------------------------------------------------------------------------
 
 /**

@@ -94,6 +94,52 @@ export const ncsrLetterSectionsPayloadSchema = z.object({
 })
 export type NcsrLetterSectionsPayload = z.infer<typeof ncsrLetterSectionsPayloadSchema>
 
+export const fundDirectoryBackfillPayloadSchema = z.object({
+  object: z.literal("fund_directory_backfill"),
+  generatedAt: z.string(),
+  skipped: skippedReasonSchema,
+  /** True when --dry-run: counts are computed but nothing is written. */
+  dryRun: z.boolean().default(false),
+  /** Distinct 13F filers found in institutional_holder_index. */
+  filersSeen: z.number().int().nonnegative().default(0),
+  /** Filers matched to an existing manager by adviser CIK (directory columns updated in place — no new row). */
+  managersMatchedByCik: z.number().int().nonnegative().default(0),
+  /** Filers matched to an existing manager by canonical entity id (no new row). */
+  managersMatchedByEntity: z.number().int().nonnegative().default(0),
+  /** Filers upserted by normalized_name that landed on an existing row (letter-manager dedup). */
+  managersUpdatedByName: z.number().int().nonnegative().default(0),
+  /** Brand-new letterless directory managers minted. */
+  managersInserted: z.number().int().nonnegative().default(0),
+  /** Filers skipped because a DIFFERENT filer/manager already owns the normalized name (no cross-contamination). */
+  nameCollisionsSkipped: z.number().int().nonnegative().default(0),
+  /** Directory managers whose publishes_letters flag CHANGED this run (recomputed from current eligibility — flips true↔false). */
+  publishesLettersMarked: z.number().int().nonnegative().default(0),
+  /** Existing letter-managers stamped directory_listed=true. */
+  letterManagersListed: z.number().int().nonnegative().default(0),
+  errors: z.array(z.string()).default([]),
+})
+export type FundDirectoryBackfillPayload = z.infer<typeof fundDirectoryBackfillPayloadSchema>
+
+export const fundDirectoryReferencesPayloadSchema = z.object({
+  object: z.literal("fund_directory_references"),
+  generatedAt: z.string(),
+  skipped: skippedReasonSchema,
+  managersExamined: z.number().int().nonnegative().default(0),
+  /** website set from an already-verified fund-letters crawl host. */
+  websitesFromCrawl: z.number().int().nonnegative().default(0),
+  /** website set from the adviser's Form ADV disclosure. */
+  websitesFromAdv: z.number().int().nonnegative().default(0),
+  wikipediaResolved: z.number().int().nonnegative().default(0),
+  /** Wikipedia candidates rejected (disambiguation/404/namesake guard). */
+  wikipediaRejected: z.number().int().nonnegative().default(0),
+  grokipediaVerified: z.number().int().nonnegative().default(0),
+  grokipediaProbable: z.number().int().nonnegative().default(0),
+  /** Grokipedia candidates rejected (missing page/namesake guard). */
+  grokipediaRejected: z.number().int().nonnegative().default(0),
+  errors: z.array(z.string()).default([]),
+})
+export type FundDirectoryReferencesPayload = z.infer<typeof fundDirectoryReferencesPayloadSchema>
+
 export const fundLetterDedupePayloadSchema = z.object({
   object: z.literal("fund_letter_dedupe"),
   generatedAt: z.string(),

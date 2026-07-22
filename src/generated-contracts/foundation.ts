@@ -39,6 +39,19 @@ export const freshnessMetadataSchema = z.object({
   asOf: z.string(),
   sourcePublishedAt: z.string().nullable().optional(),
   lagMs: z.number().int().nonnegative().nullable().optional(),
+  /**
+   * True when the value is seeded/synthetic rather than observed (OMNI-5555).
+   *
+   * `macro_observations` holds `bootstrap_tier1` rows whose values are exact
+   * arithmetic ramps (`bootstrapStart + n * bootstrapDelta`), commingled with real
+   * observations and served alongside them as a fallback. They were previously
+   * distinguishable only by `materialization.materializationVersion` and a note
+   * buried in `sourceRights.notes`, while `freshness.status` said `"fresh"` right
+   * beside them. A synthetic value carries `status: "unknown"` — there is no
+   * observation whose age could be measured — and this flag, so a consumer cannot
+   * mistake a ramp for a measurement.
+   */
+  synthetic: z.boolean().optional(),
 })
 
 export type FreshnessStatus = z.infer<typeof freshnessStatusSchema>

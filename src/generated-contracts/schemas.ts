@@ -591,6 +591,36 @@ export const companyOverviewSchema = z.object({
   freshness: freshnessMetadataSchema.optional(),
 })
 
+const companyBatchDegradedStateSchema = z.object({
+  status: z.literal("partial"),
+  reason: z.string(),
+  missingTickers: z.array(z.string()),
+})
+
+const companyBatchErrorItemSchema = z.object({
+  ticker: z.string(),
+  status: z.literal("error"),
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+  }),
+})
+
+export const companyOverviewBatchSchema = z.object({
+  object: z.literal("list"),
+  data: z.array(z.union([
+    companyOverviewSchema.extend({
+      ticker: z.string(),
+      status: z.literal("ok"),
+    }),
+    companyBatchErrorItemSchema,
+  ])),
+  count: z.number().int().nonnegative(),
+  degradedState: companyBatchDegradedStateSchema.nullable(),
+  requestId: z.string().optional(),
+  traceparent: z.string().optional(),
+})
+
 const pensionBenefitScheduleRowSchema = z.object({
   label: z.string(),
   value: z.number(),
@@ -761,6 +791,36 @@ export const companyRatiosSchema = companyFinancialEnvelopeBase.extend({
   data: z.array(companyRatioSchema),
 })
 
+export const companyFinancialsBatchSchema = z.object({
+  object: z.literal("list"),
+  data: z.array(z.union([
+    companyFinancialsEnvelopeSchema.extend({
+      ticker: z.string(),
+      status: z.literal("ok"),
+    }),
+    companyBatchErrorItemSchema,
+  ])),
+  count: z.number().int().nonnegative(),
+  degradedState: companyBatchDegradedStateSchema.nullable(),
+  requestId: z.string().optional(),
+  traceparent: z.string().optional(),
+})
+
+export const companyRatiosBatchSchema = z.object({
+  object: z.literal("list"),
+  data: z.array(z.union([
+    companyRatiosSchema.extend({
+      ticker: z.string(),
+      status: z.literal("ok"),
+    }),
+    companyBatchErrorItemSchema,
+  ])),
+  count: z.number().int().nonnegative(),
+  degradedState: companyBatchDegradedStateSchema.nullable(),
+  requestId: z.string().optional(),
+  traceparent: z.string().optional(),
+})
+
 export const boardDirectorSchema = z.object({
   name: z.string(),
   roleTitle: z.string().nullable(),
@@ -801,8 +861,8 @@ export const boardCompositionSchema = z.object({
 export const nportHoldingSchema = z.object({
   issuer: z.string(),
   title: z.string().nullable(),
-  cusip: z.string().nullable(),
-  isin: z.string().nullable(),
+  cusip: z.string().nullable().describe("Licensed CUSIP (CUSIP Global Services/ABA). Null unless your account holds a CUSIP/ISIN license; contact https://secapi.ai/contact to license. Looking up by CUSIP without a license returns licensed_identifier_required."),
+  isin: z.string().nullable().describe("Licensed ISIN. Null unless your account holds a CUSIP/ISIN license; contact https://secapi.ai/contact to license. Looking up by ISIN without a license returns licensed_identifier_required."),
   valueUsd: z.number().nullable(),
   balance: z.number().nullable(),
   balanceUnit: z.string().nullable(),
@@ -840,7 +900,7 @@ export const nportHoldingsSchema = z.object({
 export const ownershipHoldingSchema = z.object({
   issuer: z.string(),
   classTitle: z.string().nullable(),
-  cusip: z.string().nullable(),
+  cusip: z.string().nullable().describe("Licensed CUSIP (CUSIP Global Services/ABA). Null unless your account holds a CUSIP/ISIN license; contact https://secapi.ai/contact to license. Looking up by CUSIP without a license returns licensed_identifier_required."),
   valueUsdThousands: z.number().nullable(),
   shares: z.number().nullable(),
   shareType: z.string().nullable(),
@@ -869,7 +929,7 @@ export const ownershipReportSchema = z.object({
 
 export const ownershipComparisonRowSchema = z.object({
   issuer: z.string(),
-  cusip: z.string().nullable(),
+  cusip: z.string().nullable().describe("Licensed CUSIP (CUSIP Global Services/ABA). Null unless your account holds a CUSIP/ISIN license; contact https://secapi.ai/contact to license. Looking up by CUSIP without a license returns licensed_identifier_required."),
   status: z.enum(["added", "removed", "changed", "unchanged"]),
   currentValueUsdThousands: z.number().nullable(),
   previousValueUsdThousands: z.number().nullable(),
@@ -902,7 +962,7 @@ export const institutionalInvestorHoldingSchema = z.object({
   issuerEntityId: z.string().nullable(),
   issuerTicker: z.string().nullable(),
   classTitle: z.string().nullable(),
-  cusip: z.string().nullable(),
+  cusip: z.string().nullable().describe("Licensed CUSIP (CUSIP Global Services/ABA). Null unless your account holds a CUSIP/ISIN license; contact https://secapi.ai/contact to license. Looking up by CUSIP without a license returns licensed_identifier_required."),
   valueUsdThousands: z.number().nullable(),
   shares: z.number().nullable(),
   shareType: z.string().nullable(),
@@ -980,7 +1040,7 @@ export const institutionalHolderSchema = z.object({
   issuerEntityId: z.string().nullable(),
   issuerTicker: z.string().nullable(),
   classTitle: z.string().nullable(),
-  cusip: z.string().nullable(),
+  cusip: z.string().nullable().describe("Licensed CUSIP (CUSIP Global Services/ABA). Null unless your account holds a CUSIP/ISIN license; contact https://secapi.ai/contact to license. Looking up by CUSIP without a license returns licensed_identifier_required."),
   valueUsdThousands: z.number().nullable(),
   shares: z.number().nullable(),
   shareType: z.string().nullable(),
@@ -1366,32 +1426,32 @@ export const compensationComparisonSchema = z.object({
 })
 
 export const artifactSchema = z.object({
-  object: z.literal("artifact"),
-  id: z.string(),
-  createdAt: z.string(),
-  livemode: z.boolean(),
-  kind: z.enum(["markdown_bundle", "csv_tablet", "json_bundle", "duckdb_pack", "ownership_compare_bundle", "compensation_compare_bundle"]),
-  status: z.enum(["pending", "ready", "failed"]),
-  downloadUrl: z.string().nullable(),
-  provenance: provenanceSchema,
-})
+  object: z.literal("artifact").describe("Artifact resource discriminator."),
+  id: z.string().describe("Organization-scoped artifact identifier."),
+  createdAt: z.string().describe("Timestamp when the artifact bundle was created."),
+  livemode: z.boolean().describe("Whether the artifact was created in live mode."),
+  kind: z.enum(["markdown_bundle", "csv_tablet", "json_bundle", "duckdb_pack", "ownership_compare_bundle", "compensation_compare_bundle"]).describe("Stored artifact representation or comparison bundle type."),
+  status: z.enum(["pending", "ready", "failed"]).describe("Stored artifact lifecycle status."),
+  downloadUrl: z.string().nullable().optional().describe("Relative API path for downloading the persisted payload when this response includes one."),
+  provenance: provenanceSchema.describe("Source provenance carried from the filing or comparison workflow used to build the artifact."),
+}).describe("A persisted, organization-scoped artifact bundle.")
 
 export const marketCalendarDaySchema = z.object({
-  object: z.literal("market_calendar_day"),
-  id: z.string(),
-  createdAt: z.string(),
-  livemode: z.boolean(),
-  market: z.string(),
-  marketName: z.string(),
-  date: z.string(),
-  timezone: z.string(),
-  sessionStatus: z.enum(["open", "closed", "early_close"]),
-  opensAt: z.string().nullable(),
-  closesAt: z.string().nullable(),
-  holidayName: z.string().nullable(),
-  coverage: z.enum(["weekend_only", "configured_holidays"]),
-  confidence: z.enum(["confirmed", "tentative"]),
-  statusNote: z.string().nullable(),
+  object: z.literal("market_calendar_day").describe("Resource type for one market-calendar date."),
+  id: z.string().describe("Stable identifier for the market-date record."),
+  createdAt: z.string().describe("Time this calendar row was generated."),
+  livemode: z.boolean().describe("Whether the record belongs to a live account context."),
+  market: z.string().describe("ISO market identifier, such as XNYS."),
+  marketName: z.string().describe("Human-readable market name."),
+  date: z.string().describe("Calendar date in YYYY-MM-DD format."),
+  timezone: z.string().describe("Local exchange timezone used for session times."),
+  sessionStatus: z.enum(["open", "closed", "early_close"]).describe("Expected session state for the date."),
+  opensAt: z.string().nullable().describe("Scheduled local open timestamp, or null when closed."),
+  closesAt: z.string().nullable().describe("Scheduled local close timestamp, or null when closed."),
+  holidayName: z.string().nullable().describe("Named holiday when one is configured."),
+  coverage: z.enum(["weekend_only", "configured_holidays"]).describe("Whether configured local holidays supplement weekend rules."),
+  confidence: z.enum(["confirmed", "tentative"]).describe("Confidence in the listed session state under the stated coverage."),
+  statusNote: z.string().nullable().describe("Coverage caveat or closure explanation when needed."),
   provenance: provenanceSchema,
 })
 
@@ -1620,49 +1680,49 @@ export const analyticsQueryInputSchema = z.object({
 export type AnalyticsQueryInput = z.infer<typeof analyticsQueryInputSchema>
 
 export const artifactInventorySchema = z.object({
-  object: z.literal("artifact"),
-  id: z.string(),
-  createdAt: z.string(),
-  livemode: z.boolean(),
-  kind: z.string(),
-  status: z.string(),
-  downloadUrl: z.string(),
-  storageMode: z.enum(["local", "r2"]),
-  objectKey: z.string().nullable(),
-  manifest: z.record(z.string(), z.unknown()).optional(),
+  object: z.literal("artifact").describe("Artifact resource discriminator."),
+  id: z.string().describe("Organization-scoped artifact identifier."),
+  createdAt: z.string().describe("Timestamp when the artifact bundle was created."),
+  livemode: z.boolean().describe("Whether the artifact was created in live mode."),
+  kind: z.string().describe("Stored artifact kind."),
+  status: z.string().describe("Stored artifact lifecycle status."),
+  downloadUrl: z.string().describe("Relative API path for downloading the persisted payload."),
+  storageMode: z.enum(["local", "r2"]).describe("Whether the payload is stored locally or in configured R2 object storage."),
+  objectKey: z.string().nullable().describe("R2 object key when the payload is externally stored; otherwise null."),
+  manifest: z.record(z.string(), z.unknown()).optional().describe("Structured persisted-file manifest when included by the route."),
   freshness: freshnessMetadataSchema.optional(),
   materialization: materializationMetadataSchema.optional(),
   validation: validationStatusSchema.optional(),
 })
 
 export const artifactManifestSchema = z.object({
-  object: z.literal("artifact_manifest"),
-  id: z.string(),
-  artifactId: z.string(),
-  kind: z.string(),
-  status: z.string(),
-  filename: z.string(),
-  contentType: z.string(),
-  storageMode: z.enum(["local", "r2"]),
-  objectKey: z.string().nullable(),
-  byteLength: z.number().int(),
-  lineCount: z.number().int(),
-  checksumSha1: z.string(),
-  filing: z.record(z.string(), z.unknown()).nullable(),
-  section: z.record(z.string(), z.unknown()).nullable(),
-  exportedFormats: z.array(z.string()),
-  createdAt: z.string(),
+  object: z.literal("artifact_manifest").describe("Artifact manifest resource discriminator."),
+  id: z.string().describe("Manifest identifier."),
+  artifactId: z.string().describe("Identifier of the persisted artifact described by this manifest."),
+  kind: z.string().describe("Stored artifact kind."),
+  status: z.string().describe("Artifact lifecycle status at manifest creation."),
+  filename: z.string().describe("Suggested filename for the stored payload."),
+  contentType: z.string().describe("Content type of the stored payload."),
+  storageMode: z.enum(["local", "r2"]).describe("Whether the payload is stored locally or in configured R2 object storage."),
+  objectKey: z.string().nullable().describe("R2 object key when the payload is externally stored; otherwise null."),
+  byteLength: z.number().int().describe("Byte size of the persisted payload."),
+  lineCount: z.number().int().describe("Line count measured from the persisted text payload."),
+  checksumSha1: z.string().describe("SHA-1 checksum of the persisted payload for integrity comparison."),
+  filing: z.record(z.string(), z.unknown()).nullable().describe("Filing context when the bundle was derived from a filing."),
+  section: z.record(z.string(), z.unknown()).nullable().describe("Section context when one filing section was selected."),
+  exportedFormats: z.array(z.string()).describe("Export representations supported by the artifact export route."),
+  createdAt: z.string().describe("Timestamp when the artifact bundle was created."),
 })
 
 export const artifactSummarySchema = z.object({
-  object: z.literal("artifact_summary"),
-  orgId: z.string(),
+  object: z.literal("artifact_summary").describe("Artifact-summary resource discriminator."),
+  orgId: z.string().describe("Authenticated organization represented by the counts."),
   rows: z.array(z.object({
-    kind: z.string(),
-    status: z.string(),
-    storageMode: z.enum(["local", "r2"]),
-    totalBytes: z.number().int(),
-    count: z.number().int(),
+    kind: z.string().describe("Stored artifact kind."),
+    status: z.string().describe("Stored artifact lifecycle status."),
+    storageMode: z.enum(["local", "r2"]).describe("Storage mode represented by this aggregate row."),
+    totalBytes: z.number().int().describe("Total persisted bytes across matching records."),
+    count: z.number().int().describe("Number of matching persisted records."),
   })),
   requestId: z.string(),
 })
@@ -1676,7 +1736,7 @@ export const webhookEndpointSchema = z.object({
   orgId: z.string(),
   description: z.string().nullable(),
   destinationUrl: z.string().url(),
-  subscribedEventTypes: z.array(datastreamEventTypeSchema),
+  subscribedEventTypes: z.array(z.string()),
   status: z.enum(["active", "disabled"]),
   lastDeliveredAt: z.string().nullable(),
   signingSecret: z.string().optional(),
@@ -2361,22 +2421,22 @@ export const agentBootstrapSchema = z.object({
 })
 
 export const artifactReconciliationSchema = z.object({
-  object: z.literal("artifact_reconciliation"),
-  id: z.string(),
-  artifactId: z.string(),
-  status: z.enum(["local_only", "synced", "recovered", "uploaded"]),
-  storageMode: z.enum(["local", "r2"]),
-  objectKey: z.string().nullable(),
-  requestId: z.string(),
+  object: z.literal("artifact_reconciliation").describe("Artifact reconciliation resource discriminator."),
+  id: z.string().describe("Reconciliation result identifier."),
+  artifactId: z.string().describe("Identifier of the reconciled organization-scoped artifact."),
+  status: z.enum(["local_only", "synced", "recovered", "uploaded"]).describe("Whether R2 was unavailable, already contained the payload, was repaired, or received an upload."),
+  storageMode: z.enum(["local", "r2"]).describe("Storage mode after the reconciliation attempt."),
+  objectKey: z.string().nullable().describe("R2 object key after reconciliation, when available."),
+  requestId: z.string().describe("Request correlation identifier."),
 })
 
 export const artifactExportSchema = z.object({
-  object: z.literal("artifact_export"),
-  artifactId: z.string(),
-  format: z.enum(["json", "markdown", "compact_json"]),
-  manifest: artifactManifestSchema,
-  artifact: z.record(z.string(), z.unknown()).optional(),
-  download: z.record(z.string(), z.unknown()).optional(),
+  object: z.literal("artifact_export").describe("Artifact export resource discriminator."),
+  artifactId: z.string().describe("Identifier of the exported organization-scoped artifact."),
+  format: z.enum(["json", "markdown", "compact_json"]).describe("Requested export representation."),
+  manifest: artifactManifestSchema.describe("Manifest for the exported persisted payload."),
+  artifact: z.record(z.string(), z.unknown()).optional().describe("Artifact object for JSON and compact JSON exports."),
+  download: z.record(z.string(), z.unknown()).optional().describe("Download envelope for markdown exports."),
 })
 
 export const errorSchema = z.object({
@@ -2942,13 +3002,16 @@ export type CompanyOverviewFinancialSnapshot = z.infer<typeof companyOverviewFin
 export type CompanyOverviewEnrichment = z.infer<typeof companyOverviewEnrichmentSchema>
 export type CompanyOverviewEnrichments = z.infer<typeof companyOverviewEnrichmentsSchema>
 export type CompanyOverview = z.infer<typeof companyOverviewSchema>
+export type CompanyOverviewBatch = z.infer<typeof companyOverviewBatchSchema>
 export type PensionBenefitSchedule = z.infer<typeof pensionBenefitScheduleSchema>
 export type ShareFloat = z.infer<typeof shareFloatSchema>
 export type CompanyIncomeStatements = z.infer<typeof companyIncomeStatementsSchema>
 export type CompanyBalanceSheets = z.infer<typeof companyBalanceSheetsSchema>
 export type CompanyCashFlowStatements = z.infer<typeof companyCashFlowStatementsSchema>
 export type CompanyFinancials = z.infer<typeof companyFinancialsEnvelopeSchema>
+export type CompanyFinancialsBatch = z.infer<typeof companyFinancialsBatchSchema>
 export type CompanyRatios = z.infer<typeof companyRatiosSchema>
+export type CompanyRatiosBatch = z.infer<typeof companyRatiosBatchSchema>
 export type BoardComposition = z.infer<typeof boardCompositionSchema>
 export type NportHoldings = z.infer<typeof nportHoldingsSchema>
 export type TraceReference = z.infer<typeof traceReferenceSchema>

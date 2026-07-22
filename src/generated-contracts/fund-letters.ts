@@ -404,6 +404,40 @@ export const fundLetterDocumentMarkdownSchema = z.object({
 
 export type FundLetterDocumentMarkdown = z.infer<typeof fundLetterDocumentMarkdownSchema>
 
+/**
+ * Directory latest-13F summary (OMNI-5453): the resolver-stamped snapshot of
+ * a manager's most recent 13F — report date (and its canonical YYYYQn),
+ * position count, and reported AUM. A summary, not holdings: the full
+ * position list stays behind `crossLinks.holdings13F`.
+ */
+export const fundLetterManagerLatest13FSchema = z.object({
+  /** ISO date of the latest 13F report period end. */
+  reportDate: z.string(),
+  /** Canonical `YYYYQn` for reportDate (e.g. "2025Q1"). */
+  period: z.string().nullable(),
+  positionsCount: z.number().int().nullable(),
+  aumUsd: z.number().nullable(),
+})
+
+export type FundLetterManagerLatest13F = z.infer<typeof fundLetterManagerLatest13FSchema>
+
+/**
+ * Directory reference links (OMNI-5453). Mirrors resolver-proven columns
+ * verbatim: a reference the resolver did not prove serves null — URLs are
+ * never guessed or fetched at read time. `confidence` is the resolver's
+ * verification tier (a text enum), null for hand-curated entries: website is
+ * `verified_crawl` (proven from a crawl) or `form_adv` (from the ADV
+ * disclosure); grokipedia is `verified` (title + body corroboration) or
+ * `probable` (weaker match against the full primary name).
+ */
+export const fundLetterManagerReferencesSchema = z.object({
+  website: z.object({ url: z.string(), confidence: z.enum(["verified_crawl", "form_adv"]).nullable() }).nullable(),
+  wikipedia: z.object({ url: z.string() }).nullable(),
+  grokipedia: z.object({ url: z.string(), confidence: z.enum(["verified", "probable"]).nullable() }).nullable(),
+})
+
+export type FundLetterManagerReferences = z.infer<typeof fundLetterManagerReferencesSchema>
+
 export const fundLetterManagerSchema = z.object({
   object: z.literal("fund_letter_manager"),
   id: z.string(),
@@ -430,6 +464,17 @@ export const fundLetterManagerSchema = z.object({
     crd: z.string().nullable(),
     lei: z.string().nullable(),
   }),
+  // ----- Fund Directory fields (OMNI-5453) -----
+  // OPTIONAL, not nullable-required: they are present only while the server's
+  // OMNI_FUND_DIRECTORY_ENABLED flag is on, so the flag-off wire shape stays
+  // byte-identical to the pre-directory contract.
+  /** Directory theme tag (e.g. "value", "activist"); null until curated. */
+  theme: z.string().nullable().optional(),
+  /** False only for directory-only managers (13F filers with no letters). */
+  publishesLetters: z.boolean().optional(),
+  has13F: z.boolean().optional(),
+  latest13F: fundLetterManagerLatest13FSchema.nullable().optional(),
+  references: fundLetterManagerReferencesSchema.optional(),
   crossLinks: z.object({
     holdings13F: z.string().nullable(),
   }),
@@ -481,6 +526,50 @@ export const fundManagerOverviewLatestLetterSchema = z.object({
 export type FundManagerOverviewLatestLetter = z.infer<typeof fundManagerOverviewLatestLetterSchema>
 
 /**
+ * One top position from the manager's latest 13F report (opt-in via
+ * `include=positions`). Sourced from the materialized 13F holder read model,
+ * with the same amendment/restatement canonicalization the institutional
+ * holders surface applies (never double-counts 13F-HR/A rows).
+ */
+export const fundManagerOverviewTopPositionSchema = z.object({
+  /** 1-based rank within the canonical report, largest reported value first. */
+  rank: z.number().int().positive(),
+  /** Issuer name as reported on the 13F information table. */
+  issuer: z.string(),
+  /** Resolved listing ticker; null when the CUSIP maps to no canonical entity. */
+  ticker: z.string().nullable(),
+  /** 13F-reported CUSIP (SEC-sourced; null on legacy/pre-XML rows). */
+  cusip: z.string().nullable(),
+  /** Reported position value in USD (13F values are reported in thousands; already scaled). */
+  value: z.number().nullable(),
+  shares: z.number().nullable(),
+  /** Percent of the report's total reported value (0-100); null when totals are unreported. */
+  pctOfPortfolio: z.number().nullable(),
+})
+
+export type FundManagerOverviewTopPosition = z.infer<typeof fundManagerOverviewTopPositionSchema>
+
+/**
+ * Latest-13F snapshot inlined on the overview when `include=positions` is
+ * requested. Deliberately capped at the top 10 positions — the full portfolio
+ * is one hop away via `links.holdings13F`.
+ */
+export const fundManagerOverviewLatest13FSchema = z.object({
+  /** Canonical `YYYYQn` derived from reportDate; null when the period is unknown. */
+  period: z.string().nullable(),
+  /** 13F period-of-report date (quarter end). */
+  reportDate: z.string().nullable(),
+  /** Filing date of the latest accession contributing to the canonical report. */
+  filedAt: z.string(),
+  /** Count of distinct issuer positions in the canonical (amendment-deduped) report. */
+  totalPositions: z.number().int().nonnegative(),
+  /** Top positions by reported value, at most 10. */
+  topPositions: z.array(fundManagerOverviewTopPositionSchema).default([]),
+})
+
+export type FundManagerOverviewLatest13F = z.infer<typeof fundManagerOverviewLatest13FSchema>
+
+/**
  * `GET /v1/fund-letters/managers/{manager_id}/overview` — the token-efficient
  * "who is this manager" briefing, mirroring the company-overview discipline:
  * identity (canonical name, description, founders, website), coverage counts,
@@ -501,6 +590,10 @@ export const fundManagerOverviewSchema = z.object({
   description: z.string().nullable(),
   founders: z.array(fundManagerFounderSchema).default([]),
   website: z.string().nullable(),
+  // External reference links (website confidence + Wikipedia + Grokipedia).
+  // Present only when the Fund Directory is enabled; omitted otherwise so the
+  // default overview shape is unchanged.
+  references: fundLetterManagerReferencesSchema.optional(),
   strategy: z.object({
     approach: z.string().nullable(),
     styleTags: z.array(z.string()).default([]),
@@ -516,10 +609,23 @@ export const fundManagerOverviewSchema = z.object({
     latestPeriod: z.string().nullable(),
   }),
   latestLetter: fundManagerOverviewLatestLetterSchema.nullable(),
+  /**
+   * Opt-in (`include=positions`): top-10 positions from the manager's latest
+   * canonical 13F report. OMITTED when not requested (the default overview
+   * stays lean); null when requested but the manager has no adviser CIK or no
+   * indexed 13F. Page beyond the top 10 via `links.holdings13F`.
+   */
+  latest13F: fundManagerOverviewLatest13FSchema.nullable().optional(),
   links: z.object({
     self: z.string(),
     letters: z.string(),
     theses: z.string(),
+    /**
+     * "Get more" for `latest13F`: the manager's FULL 13F holdings surface
+     * (`/v1/owners/13f?cik={adviserCik}`; `/v1/owners/institutional/investor`
+     * takes the same `cik` for the paged portfolio view). The overview inlines
+     * at most the top 10 positions — page beyond them here.
+     */
     holdings13F: z.string().nullable(),
   }),
 })

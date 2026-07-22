@@ -1,7 +1,7 @@
 {
   "name": "@secapi/sdk-js",
-  "version": "1.3.0",
-  "description": "JavaScript and TypeScript client for SEC API filings and financial data",
+  "version": "2.0.0",
+  "description": "JavaScript and TypeScript SDK for SEC filings, filing sections, financial statements, and ownership data.",
   "private": false,
   "type": "module",
   "engines": {
@@ -33,14 +33,12 @@
     "sec",
     "edgar",
     "sec-filings",
-    "sec-api",
-    "api",
     "financial-statements",
     "ownership-data",
     "typescript",
     "javascript"
   ],
-  "homepage": "https://docs.secapi.ai",
+  "homepage": "https://secapi.ai/developers",
   "bugs": {
     "url": "https://github.com/secapi-ai/secapi-js/issues"
   },

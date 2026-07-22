@@ -174,13 +174,13 @@ export const SITUATION_FORM_DETECTION = {
   divestiture: { forms: ["8-K"], eightKItems: ["1.01", "2.01", "8.01"] },
   activist_campaign: { forms: ["SC 13D", "SC 13D/A", "DFAN14A", "DEFC14A", "PREC14A", "PX14A6G"], eightKItems: ["5.02", "8.01"] },
   restructuring: { forms: ["8-K", "T-3", "S-4"], eightKItems: ["1.01", "1.02", "2.03", "3.02", "8.01"] },
-  bankruptcy: { forms: ["8-K", "25-NSE", "15-12B", "15-12G"], eightKItems: ["1.03", "3.01", "8.01"] },
+  bankruptcy: { forms: ["8-K", "25-NSE", "15-12B", "15-12G", "15-15D"], eightKItems: ["1.03", "3.01", "8.01"] },
   liquidation: { forms: ["8-K", "PREM14A", "DEFM14A"], eightKItems: ["1.03", "8.01"] },
   strategic_review: { forms: ["8-K"], eightKItems: ["8.01"] },
   capital_return: { forms: ["8-K"], eightKItems: ["8.01"] },
   capital_raise: { forms: ["8-K", "S-1", "S-3", "424B*", "F-1", "F-3"], eightKItems: ["1.01", "2.03", "3.02", "8.01"] },
   spac: { forms: ["8-K", "S-1", "424B*", "DEF 14A", "PREM14A"], eightKItems: ["1.01", "3.02", "5.07", "8.01"] },
-  delisting: { forms: ["25-NSE", "25", "15-12B", "15-12G", "8-K"], eightKItems: ["3.01"] },
+  delisting: { forms: ["25-NSE", "25", "15-12B", "15-12G", "15-15D", "8-K"], eightKItems: ["3.01"] },
   relisting: { forms: ["8-K", "8-A12B", "8-A12G"], eightKItems: ["3.01", "8.01"] },
   litigation: { forms: ["8-K"], eightKItems: ["1.01", "8.01"] },
   management_change: { forms: ["8-K"], eightKItems: ["5.02"] },
@@ -499,33 +499,24 @@ export type SituationWeeklyIssueList = z.infer<typeof situationWeeklyIssueListSc
 // Additive, anonymous-safe shape for /v1/embed/situations*. It deliberately
 // does not expose provider keys, extraction trace ids, model versions,
 // confidence/cross-validation telemetry, raw provenance JSON, prompts, or
-// vendor/internal metadata. Missing public evidence is represented with nulls
-// on the specific nullable field and empty arrays for absent collections.
+// vendor/internal metadata. Missing public evidence is omitted rather than
+// serialized as placeholder nulls; the paid /v1/situations schema keeps the
+// full frozen resource contract.
 // ---------------------------------------------------------------------------
-
-export const publicSituationVerificationSchema = z.object({
-  sourceSpan: z.null(),
-  extractionTraceId: z.null(),
-  confidence: z.null(),
-  crossValidations: z.array(z.unknown()).max(0).default([]),
-  modelVersion: z.null(),
-  verifiedAt: z.null(),
-})
 
 export const publicSituationSourceFilingSchema = z.object({
   accessionNumber: z.string(),
-  filingUrl: z.string().url().nullable(),
-  formType: z.string().nullable(),
-  filedAt: z.string().nullable(),
-  title: z.string().nullable(),
+  filingUrl: z.string().url().optional(),
+  formType: z.string().optional(),
+  filedAt: z.string().optional(),
+  title: z.string().optional(),
 })
 
 export const publicSituationCitationSchema = z.object({
   claimPath: z.string(),
   claim: z.string(),
   accessionNumber: z.string(),
-  filingUrl: z.string().url().nullable(),
-  sourceSpan: z.string().nullable(),
+  filingUrl: z.string().url().optional(),
 })
 
 export const publicSituationProvenanceSchema = z.object({
@@ -538,19 +529,17 @@ export const publicSituationEventSchema = z.object({
   object: z.literal("situation_event"),
   id: z.string(),
   createdAt: z.string(),
-  livemode: z.boolean(),
   situationId: z.string(),
   occurredAt: z.string(),
   accessionNumber: z.string(),
   formType: z.string(),
   eightKItems: z.array(z.string()).default([]),
-  category: filingEventCategorySchema.nullable(),
+  category: filingEventCategorySchema.optional(),
   title: z.string(),
-  summaryMd: z.string().nullable().optional(),
-  statusBefore: situationStatusSchema.nullable(),
-  statusAfter: situationStatusSchema.nullable(),
-  documentUrl: z.string().url().nullable(),
-  verification: publicSituationVerificationSchema,
+  summaryMd: z.string().optional(),
+  statusBefore: situationStatusSchema.optional(),
+  statusAfter: situationStatusSchema.optional(),
+  documentUrl: z.string().url().optional(),
   publicProvenance: publicSituationProvenanceSchema,
 })
 
@@ -559,27 +548,25 @@ export const publicSituationSchema = z.object({
   id: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
-  livemode: z.boolean(),
   type: situationTypeSchema,
-  subtype: situationSubtypeSchema.nullable(),
+  subtype: situationSubtypeSchema.optional(),
   status: situationStatusSchema,
   statusUpdatedAt: z.string(),
-  ticker: z.string().nullable(),
+  ticker: z.string().optional(),
   cik: z.string(),
   entityName: z.string(),
-  exchange: z.string().nullable().optional(),
-  country: z.string().nullable().optional(),
-  sector: z.string().nullable().optional(),
+  exchange: z.string().optional(),
+  country: z.string().optional(),
+  sector: z.string().optional(),
   headline: z.string(),
-  summaryMd: z.string().nullable().optional(),
-  businessProfile: z.string().nullable().optional(),
-  terms: situationTermsSchema,
-  keyDates: situationKeyDatesSchema,
-  market: situationMarketContextSchema,
+  summaryMd: z.string().optional(),
+  businessProfile: z.string().optional(),
+  terms: situationTermsSchema.partial().optional(),
+  keyDates: situationKeyDatesSchema.partial().optional(),
+  market: situationMarketContextSchema.partial().optional(),
   sourceAccessions: z.array(z.string()).default([]),
   eventCount: z.number().int().nonnegative(),
-  latestEventAt: z.string().nullable(),
-  verification: publicSituationVerificationSchema,
+  latestEventAt: z.string().optional(),
   publicProvenance: publicSituationProvenanceSchema,
 })
 
@@ -587,11 +574,21 @@ export const publicSituationDetailSchema = publicSituationSchema.extend({
   events: z.array(publicSituationEventSchema).default([]),
 })
 
+export const publicSituationListDegradedStateSchema = degradedStateSchema.extend({
+  code: z.literal("bounded_dimension_filter_enrichment"),
+  scope: z.literal("bounded_page_candidate_enrichment"),
+  candidatesScanned: z.number().int().nonnegative(),
+  candidateBudget: z.number().int().positive(),
+  batchLimit: z.number().int().positive(),
+  exhaustive: z.literal(false),
+})
+
 export const publicSituationListSchema = z.object({
   object: z.literal("list"),
   data: z.array(publicSituationSchema),
   hasMore: z.boolean(),
-  nextCursor: z.string().nullable(),
+  nextCursor: z.string().optional(),
+  degradedState: publicSituationListDegradedStateSchema.optional(),
   generatedAt: z.string(),
 })
 
@@ -601,14 +598,14 @@ export const publicSituationFeedItemSchema = z.object({
   situation: z.object({
     id: z.string(),
     type: situationTypeSchema,
-    subtype: situationSubtypeSchema.nullable(),
+    subtype: situationSubtypeSchema.optional(),
     status: situationStatusSchema,
-    ticker: z.string().nullable(),
+    ticker: z.string().optional(),
     entityName: z.string(),
     headline: z.string(),
-    summaryMd: z.string().nullable().optional(),
-    businessProfile: z.string().nullable().optional(),
-    market: situationMarketContextSchema,
+    summaryMd: z.string().optional(),
+    businessProfile: z.string().optional(),
+    market: situationMarketContextSchema.partial().optional(),
   }),
 })
 
@@ -616,8 +613,67 @@ export const publicSituationFeedItemListSchema = z.object({
   object: z.literal("list"),
   data: z.array(publicSituationFeedItemSchema),
   hasMore: z.boolean(),
-  nextCursor: z.string().nullable(),
+  nextCursor: z.string().optional(),
   generatedAt: z.string(),
+})
+
+export const publicSituationWeeklyIssueSituationSchema = z.object({
+  id: z.string(),
+  type: situationTypeSchema,
+  subtype: situationSubtypeSchema.optional(),
+  status: situationStatusSchema,
+  ticker: z.string().optional(),
+  cik: z.string(),
+  entityName: z.string(),
+  headline: z.string(),
+  summaryMd: z.string().optional(),
+  businessProfile: z.string().optional(),
+  terms: situationTermsSchema.partial().optional(),
+  keyDates: situationKeyDatesSchema.partial().optional(),
+  sourceAccessions: z.array(z.string()).default([]),
+  eventCount: z.number().int().nonnegative(),
+  latestEventAt: z.string().optional(),
+})
+
+export const publicSituationWeeklyIssueEventSchema = z.object({
+  object: z.literal("situation_event"),
+  id: z.string(),
+  createdAt: z.string(),
+  situationId: z.string(),
+  occurredAt: z.string(),
+  accessionNumber: z.string(),
+  formType: z.string(),
+  eightKItems: z.array(z.string()).default([]),
+  category: z.string().optional(),
+  title: z.string(),
+  summaryMd: z.string().optional(),
+  statusBefore: situationStatusSchema.optional(),
+  statusAfter: situationStatusSchema.optional(),
+  documentUrl: z.string().url().optional(),
+})
+
+export const publicSituationWeeklyIssueSchema = z.object({
+  object: z.literal("situation_weekly_issue"),
+  id: z.string(),
+  issueNumber: z.number().int().positive(),
+  slug: z.string(),
+  periodStart: z.string(),
+  periodEnd: z.string(),
+  title: z.string(),
+  summaryMd: z.string().optional(),
+  markdown: z.string(),
+  sourceSituationIds: z.array(z.string()),
+  sourceEventIds: z.array(z.string()),
+  sourceEvents: z.array(publicSituationWeeklyIssueEventSchema).default([]),
+  publishedAt: z.string(),
+  situations: z.array(publicSituationWeeklyIssueSituationSchema),
+})
+
+export const publicSituationWeeklyIssueListSchema = z.object({
+  object: z.literal("list"),
+  data: z.array(publicSituationWeeklyIssueSchema),
+  hasMore: z.boolean(),
+  nextCursor: z.string().optional(),
 })
 
 export type PublicSituation = z.infer<typeof publicSituationSchema>
@@ -626,6 +682,8 @@ export type PublicSituationEvent = z.infer<typeof publicSituationEventSchema>
 export type PublicSituationProvenance = z.infer<typeof publicSituationProvenanceSchema>
 export type PublicSituationList = z.infer<typeof publicSituationListSchema>
 export type PublicSituationFeedItemList = z.infer<typeof publicSituationFeedItemListSchema>
+export type PublicSituationWeeklyIssue = z.infer<typeof publicSituationWeeklyIssueSchema>
+export type PublicSituationWeeklyIssueList = z.infer<typeof publicSituationWeeklyIssueListSchema>
 
 // ---------------------------------------------------------------------------
 // Special Situations customer projections (additive, T3)
@@ -715,7 +773,7 @@ export type SituationLookupForm = (typeof SITUATION_LOOKUP_FORMS)[number]
 
 /** Case/space/hyphen-insensitive canonicalization for form matching. */
 function canonicalizeForm(form: string): string {
-  return form.trim().toUpperCase().replace(/\s+/g, " ").replace(/\/A\d*$/, "").replace(/-/g, "")
+  return form.trim().toUpperCase().replace(/\/A\d*$/, "").replace(/[\s-]+/g, "")
 }
 
 /**
@@ -786,6 +844,36 @@ export const situationStatsSchema = z.object({
   byStatus: z.record(z.string(), z.number().int().nonnegative()),
   bySector: z.record(z.string(), z.number().int().nonnegative()),
   byMarketCapBucket: z.record(z.string(), z.number().int().nonnegative()),
+  byCountry: z.record(z.string(), z.number().int().nonnegative()).optional(),
+  coverage: z.object({
+    scope: z.literal("persisted_situation_columns"),
+    countedFields: z.array(z.enum(["type", "status", "sector", "marketCapBucket", "country"])),
+    dimensions: z.object({
+      sector: z.object({
+        known: z.number().int().nonnegative(),
+        unknown: z.number().int().nonnegative(),
+        total: z.number().int().nonnegative(),
+        ratio: z.number().min(0).max(1),
+      }),
+      marketCapBucket: z.object({
+        known: z.number().int().nonnegative(),
+        unknown: z.number().int().nonnegative(),
+        total: z.number().int().nonnegative(),
+        ratio: z.number().min(0).max(1),
+      }),
+      country: z.object({
+        known: z.number().int().nonnegative(),
+        unknown: z.number().int().nonnegative(),
+        total: z.number().int().nonnegative(),
+        ratio: z.number().min(0).max(1),
+      }),
+    }),
+    enrichedDimensionFilters: z.object({
+      scope: z.literal("bounded_page_candidate_enrichment"),
+      candidateBudget: z.number().int().positive(),
+      batchLimit: z.number().int().positive(),
+    }),
+  }).optional(),
 })
 
 export type SituationStats = z.infer<typeof situationStatsSchema>

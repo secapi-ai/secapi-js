@@ -29,9 +29,6 @@ import {
   artifactManifestSchema,
   artifactExportSchema,
   artifactReconciliationSchema,
-  marketCalendarDaySchema,
-  indexSchema,
-  indexConstituentSchema,
   derivedSignalSchema,
   traceSchema,
   analyticsQueryResultSchema,
@@ -96,7 +93,7 @@ export type ResponseView = z.infer<typeof responseViewSchema>
 
 const DEFAULT_BASE_URL = "https://api.secapi.ai"
 const DEFAULT_API_VERSION = "2026-03-19"
-export const SDK_VERSION = "1.3.0"
+export const SDK_VERSION = "2.0.0"
 const POSTHOG_CAPTURE_HOST = "https://us.i.posthog.com"
 
 const SAFE_RETRY_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
@@ -201,6 +198,103 @@ export type PaginationOptions<T = unknown> = {
   getNextCursor?: (page: unknown) => string | number | null | undefined
 }
 
+/**
+ * Query parameters for the public `/v1/market/*` plane.
+ *
+ * These mirror the generated contract in `packages/contracts/src/openapi.ts`
+ * exactly — the routes in `services/datastream-api/src/routes/market.ts` are the
+ * source of truth and every one of these parameters is optional there. In
+ * particular:
+ *
+ * - `/v1/market/snapshots` reads `parseSymbols(symbols, ticker)`, so either form
+ *   is accepted.
+ * - `/v1/market/bars` and `/v1/market/corporate-actions` read
+ *   `query("ticker") ?? query("symbol")` and default `date_from`/`date_to` when
+ *   omitted, so neither the symbol spelling nor the date bounds may be required
+ *   at the SDK type boundary.
+ * - `/v1/market/bars` supports `adjusted`; it does NOT support `interval`.
+ *
+ * Requiring any of these narrows the SDK below the public API and makes
+ * documented requests fail to compile. `MARKET_QUERY_PARAMS` below is the
+ * runtime mirror of these types and is asserted against the generated contract
+ * in `test/market-surface.test.ts`, so a future regeneration cannot silently
+ * re-narrow these signatures.
+ */
+export type MarketCalendarParams = { market?: string; start?: string; duration?: number }
+
+export type MarketSnapshotsParams = { symbols?: string | string[]; ticker?: string }
+
+export type MarketBarsParams = {
+  ticker?: string
+  symbol?: string
+  date_from?: string
+  date_to?: string
+  adjusted?: boolean
+  limit?: number
+}
+
+export type MarketCorporateActionsParams = {
+  ticker?: string
+  symbol?: string
+  date_from?: string
+  date_to?: string
+  limit?: number
+}
+
+export type MarketReferenceParams = { ticker?: string; symbol?: string }
+
+/**
+ * Runtime mirror of the market parameter types above, keyed by route path.
+ *
+ * The `satisfies` clause ties each entry to its type: dropping a property from
+ * one of the `Market*Params` types fails typecheck here, and the contract
+ * assertion in `test/market-surface.test.ts` fails if the route grows or loses a
+ * query parameter. Together they close the re-narrowing hole.
+ */
+export const MARKET_QUERY_PARAMS = {
+  "/v1/market/calendar": ["market", "start", "duration"],
+  "/v1/market/snapshots": ["symbols", "ticker"],
+  "/v1/market/bars": ["ticker", "symbol", "date_from", "date_to", "adjusted", "limit"],
+  "/v1/market/corporate-actions": ["ticker", "symbol", "date_from", "date_to", "limit"],
+  "/v1/market/reference": ["ticker", "symbol"],
+} as const satisfies {
+  "/v1/market/calendar": readonly (keyof MarketCalendarParams)[]
+  "/v1/market/snapshots": readonly (keyof MarketSnapshotsParams)[]
+  "/v1/market/bars": readonly (keyof MarketBarsParams)[]
+  "/v1/market/corporate-actions": readonly (keyof MarketCorporateActionsParams)[]
+  "/v1/market/reference": readonly (keyof MarketReferenceParams)[]
+}
+
+/**
+ * `true` only when `K` lists every key of `T`; otherwise `never`, which makes
+ * the assignment below fail to compile.
+ */
+type ListsEveryKeyOf<T, K extends readonly PropertyKey[]> = [Exclude<keyof T, K[number]>] extends [never] ? true
+  : never
+
+/**
+ * Compile-time proof that `MARKET_QUERY_PARAMS` is exhaustive. The `satisfies`
+ * clause above rejects entries that are not real keys; this rejects real keys
+ * that were left out. Adding a parameter to a `Market*Params` type without
+ * listing it here is a typecheck failure.
+ */
+export const MARKET_QUERY_PARAMS_ARE_EXHAUSTIVE: {
+  "/v1/market/calendar": ListsEveryKeyOf<MarketCalendarParams, typeof MARKET_QUERY_PARAMS["/v1/market/calendar"]>
+  "/v1/market/snapshots": ListsEveryKeyOf<MarketSnapshotsParams, typeof MARKET_QUERY_PARAMS["/v1/market/snapshots"]>
+  "/v1/market/bars": ListsEveryKeyOf<MarketBarsParams, typeof MARKET_QUERY_PARAMS["/v1/market/bars"]>
+  "/v1/market/corporate-actions": ListsEveryKeyOf<
+    MarketCorporateActionsParams,
+    typeof MARKET_QUERY_PARAMS["/v1/market/corporate-actions"]
+  >
+  "/v1/market/reference": ListsEveryKeyOf<MarketReferenceParams, typeof MARKET_QUERY_PARAMS["/v1/market/reference"]>
+} = {
+  "/v1/market/calendar": true,
+  "/v1/market/snapshots": true,
+  "/v1/market/bars": true,
+  "/v1/market/corporate-actions": true,
+  "/v1/market/reference": true,
+}
+
 export type FactorApiResponseMode = "compact" | "standard" | "verbose"
 
 type FactorResponseControls = {
@@ -250,7 +344,7 @@ type SituationWatchParams = {
   name?: string
   filters?: SituationMonitorFilter
   startAt?: string
-  delivery: SituationWatchDelivery
+  delivery?: SituationWatchDelivery
 }
 
 // ----- Fund Letters plane (Track F). Coded to the frozen /v1/fund-letters -----
@@ -341,10 +435,27 @@ type FundLetterThesesParams = {
 }
 
 type FundLetterManagersParams = {
+  /** Firm-name substring; the Fund Directory also matches founder/CIO names. */
   q?: string
+  /** Strategy approach; the Fund Directory also matches styleTags entries. */
   strategy?: string
   has_13f?: boolean
   min_letters?: number
+  // --- Fund Directory filters (server-side flag-gated; ignored while the
+  // directory is disabled, so calls keep their pre-directory behavior). ---
+  /** Managers whose latest 13F holds this ticker. */
+  ticker?: string
+  /** Adviser CIK exact match (padded or unpadded). */
+  cik?: string
+  /** Curated directory theme tag (e.g. "value", "activist"). */
+  theme?: string
+  /** Latest-13F position count at least this many. */
+  min_positions?: number
+  /** true → letter-publishing managers only; false → directory-only 13F managers. */
+  publishes_letters?: boolean
+  /** Managers with a 13F report date inside this `YYYYQn` quarter. */
+  period?: string
+  /** "aum_desc" | "positions_desc" | "letters_desc" | "name_asc". */
   sort?: string
   cursor?: string
   limit?: number
@@ -428,33 +539,6 @@ type FactorSparklineParams = FactorKeySelection & {
   date_from?: string
   date_to?: string
   format?: "json" | "csv"
-}
-
-type FactorValuationWeightingMode = "long_short_equal" | "long_leg_focus" | "short_leg_focus"
-
-type FactorValuationParams = FactorKeySelection & {
-  side?: "tailwind" | "headwind" | "neutral" | "all"
-  signal?: "tailwind" | "headwind" | "neutral" | "all"
-  sort?: "opportunity_score" | "abs_z_score" | "factor_key"
-  weighting_mode?: FactorValuationWeightingMode
-  weighting?: FactorValuationWeightingMode
-  format?: "json" | "csv"
-  limit?: number
-}
-
-type FactorValuationStockParams = FactorKeySelection & {
-  factor?: string
-  factorKey?: string
-  key?: string
-  signal?: "all" | "tailwind" | "headwind" | "neutral"
-  stance?: "beneficiaries" | "at_risk" | "both"
-  side?: "beneficiary" | "beneficiaries" | "long" | "winners" | "opportunity" | "opportunities" | "at_risk" | "risk" | "risks" | "short" | "losers" | "both" | "all"
-  direction?: "beneficiary" | "beneficiaries" | "long" | "winners" | "opportunity" | "opportunities" | "at_risk" | "risk" | "risks" | "short" | "losers" | "both" | "all"
-  weighting_mode?: FactorValuationWeightingMode
-  weighting?: FactorValuationWeightingMode
-  format?: "json" | "csv"
-  limit?: number
-  sort?: "score" | "abs_beta" | "symbol"
 }
 
 type PortfolioHoldingInput = {
@@ -1135,7 +1219,6 @@ export class SecApiClient {
     historyCsv: (...args: Parameters<SecApiClient["factorHistoryCsv"]>) => this.factorHistoryCsv(...args),
     dashboard: (...args: Parameters<SecApiClient["factorDashboard"]>) => this.factorDashboard(...args),
     macroSensitivity: (...args: Parameters<SecApiClient["factorMacroSensitivity"]>) => this.factorMacroSensitivity(...args),
-    valuations: (...args: Parameters<SecApiClient["factorValuations"]>) => this.factorValuations(...args),
     exposures: (...args: Parameters<SecApiClient["factorExposures"]>) => this.factorExposures(...args),
     decomposition: (...args: Parameters<SecApiClient["factorDecomposition"]>) => this.factorDecomposition(...args),
     relatedStocks: (...args: Parameters<SecApiClient["factorRelatedStocks"]>) => this.factorRelatedStocks(...args),
@@ -1172,6 +1255,10 @@ export class SecApiClient {
     feed: (...args: Parameters<SecApiClient["situationsFeed"]>) => this.situationsFeed(...args),
     feedRss: (...args: Parameters<SecApiClient["situationsFeedRss"]>) => this.situationsFeedRss(...args),
     watch: (...args: Parameters<SecApiClient["watchSituations"]>) => this.watchSituations(...args),
+    watchlists: (...args: Parameters<SecApiClient["listSituationWatchlists"]>) => this.listSituationWatchlists(...args),
+    watchlist: (...args: Parameters<SecApiClient["getSituationWatchlist"]>) => this.getSituationWatchlist(...args),
+    createWatchlist: (...args: Parameters<SecApiClient["createSituationWatchlist"]>) => this.createSituationWatchlist(...args),
+    deleteWatchlist: (...args: Parameters<SecApiClient["deleteSituationWatchlist"]>) => this.deleteSituationWatchlist(...args),
     calendar: (...args: Parameters<SecApiClient["situationsCalendar"]>) => this.situationsCalendar(...args),
     stats: (...args: Parameters<SecApiClient["situationsStats"]>) => this.situationsStats(...args),
     performance: (...args: Parameters<SecApiClient["situationsPerformance"]>) => this.situationsPerformance(...args),
@@ -2211,8 +2298,12 @@ export class SecApiClient {
     return this.get("/v1/embed/situations", params)
   }
 
-  async embedSituationsFeed(params: RequestParams<{ types?: string | string[]; limit?: number }> = {}) {
+  async embedSituationsFeed(params: RequestParams<{ types?: string | string[]; categories?: string | string[]; tickers?: string | string[]; country?: string; cursor?: string; limit?: number }> = {}) {
     return this.get("/v1/embed/situations/feed", params)
+  }
+
+  async embedSituationsFeedRss(params: RequestParams<{ types?: string | string[]; categories?: string | string[]; tickers?: string | string[]; country?: string }> = {}) {
+    return this.get<string>("/v1/embed/situations/feed.rss", params)
   }
 
   async embedSituationsStats(params: RequestParams<Record<string, never>> = {}) {
@@ -2231,7 +2322,10 @@ export class SecApiClient {
     return this.get(`/v1/embed/situations/${encodeURIComponent(id)}`, params)
   }
 
-  // Metrics serving plane (WS4, OMNI-5124). DORMANT: gated OFF behind the
+  async embedSituationExport(id: string, options?: RequestOptions) {
+    return this.get<string>(`/v1/embed/situations/${encodeURIComponent(id)}/export`, options)
+  }
+
   async form144Filings(
     params: RequestParams<{ ticker?: string; cik?: string; date_from?: string; date_to?: string; submission_file_limit?: number; cursor?: string; limit?: number; view?: ResponseView }> = {},
   ) {
@@ -2254,28 +2348,45 @@ export class SecApiClient {
     return this.get("/v1/earnings/transcripts", params)
   }
 
-  async marketCalendar(params: RequestParams<{ market?: string; start?: string; duration?: number }> = {}) {
+  // Public market data plane. The first five routes are `contractGatedRoute` /
+  // public in services/datastream-api/src/lib/api-surface-registry.ts and are
+  // present in the published public OpenAPI. Market routes registered with
+  // internal-token access deliberately have NO client method here —
+  // see docs/operations/sdk-mirror-publish-triage.md.
+  async marketCalendar(params: RequestParams<MarketCalendarParams> = {}) {
     return this.get("/v1/market/calendar", params)
   }
 
-  async marketEarningsCalendar(params: RequestParams<{ ticker?: string; date_from?: string; date_to?: string; limit?: number }> = {}) {
-    return this.get("/v1/market/earnings-calendar", params)
-  }
-
-  async marketSnapshots(params: RequestParams<{ symbols: string | string[] }>) {
+  async marketSnapshots(params: RequestParams<MarketSnapshotsParams> = {}) {
     return this.get("/v1/market/snapshots", params)
   }
 
-  async marketBars(params: RequestParams<{ symbol: string; date_from: string; date_to: string; interval?: string; limit?: number }>) {
+  async marketBars(params: RequestParams<MarketBarsParams> = {}) {
     return this.get("/v1/market/bars", params)
   }
 
-  async marketCorporateActions(params: RequestParams<{ symbol: string; date_from: string; date_to: string; limit?: number }>) {
+  async marketCorporateActions(params: RequestParams<MarketCorporateActionsParams> = {}) {
     return this.get("/v1/market/corporate-actions", params)
   }
 
-  async marketReference(params: RequestParams<{ symbol?: string; ticker?: string }>) {
+  async marketReference(params: RequestParams<MarketReferenceParams> = {}) {
     return this.get("/v1/market/reference", params)
+  }
+
+  // `/v1/market/indices` and `/v1/market/indices/constituents` are
+  // operator-access, docs:internal routes (see api-surface-registry.ts) that
+  // nonetheless shipped in the published @secapi/sdk-js 1.3.0 client. OMNI-5546
+  // ports them into the monorepo source so the destructive mirror sync PRESERVES
+  // this live customer surface instead of deleting it. Signatures match the
+  // published 1.3.0 methods exactly.
+  async marketIndices(params: RequestParams<{ include_inventory?: boolean }> = {}) {
+    return this.get("/v1/market/indices", params)
+  }
+
+  async indexConstituents(
+    params: RequestParams<{ index?: string; index_code?: string; cursor?: string; limit?: number }> = {},
+  ) {
+    return this.get("/v1/market/indices/constituents", params)
   }
 
   async newsStories(params: RequestParams<{ ticker?: string; cik?: string; q?: string; limit?: number }> = {}) {
@@ -2434,22 +2545,6 @@ export class SecApiClient {
     sort?: "abs_z_score" | "abs_spread_return"
   }> = {}) {
     return this.get("/v1/factors/extreme-pairs", params)
-  }
-
-  async factorValuations(params: RequestParams<FactorValuationParams> = {}) {
-    return this.get("/v1/factors/valuations", params)
-  }
-
-  async factorValuationsCsv(params: RequestParams<Omit<FactorValuationParams, "format">> = {}) {
-    return this.get<string>("/v1/factors/valuations", { ...params, format: "csv" })
-  }
-
-  async factorValuationStocks(params: RequestParams<FactorValuationStockParams> = {}) {
-    return this.get("/v1/factors/valuations/stocks", params)
-  }
-
-  async factorValuationStocksCsv(params: RequestParams<Omit<FactorValuationStockParams, "format">> = {}) {
-    return this.get<string>("/v1/factors/valuations/stocks", { ...params, format: "csv" })
   }
 
   async factorExposures(params: RequestParams<FactorKeySelection & { symbols: string | string[] }>) {
@@ -2628,14 +2723,6 @@ export class SecApiClient {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }, undefined, options)
-  }
-
-  async marketIndices(params: RequestParams<{ include_inventory?: boolean }> = {}) {
-    return this.get("/v1/market/indices", params)
-  }
-
-  async indexConstituents(params: RequestParams<{ index?: string; index_code?: string; cursor?: string; limit?: number }> = {}) {
-    return this.get("/v1/market/indices/constituents", params)
   }
 
   async volatilitySignal(params: RequestParams<{ ticker?: string; cik?: string }>) {
@@ -2892,12 +2979,28 @@ export class SecApiClient {
   }
 
   /**
-   * Create a typed Special Situations monitor using the existing structured
-   * monitor API. Filters are validated client-side against the public
-   * `situationMonitorFilterSchema`; delivery can target an email recipient or
-   * the organization's configured webhook fanout.
+   * Create a typed Special Situations monitor using the situation-scoped
+   * watchlist API. Filters are validated client-side against the public
+   * `situationMonitorFilterSchema`; optional delivery can target an email
+   * recipient or the organization's configured webhook fanout.
    */
   async watchSituations(body: SituationWatchParams, options?: RequestOptions) {
+    return this.createSituationWatchlist(body, options)
+  }
+
+  async listSituationWatchlists(params: RequestParams<{ limit?: number; cursor?: string | number }> = {}) {
+    return this.get("/v1/situations/watchlists", params)
+  }
+
+  async getSituationWatchlist(monitorId: string, options?: RequestOptions) {
+    return this.request(`/v1/situations/watchlists/${encodeURIComponent(monitorId)}`, {}, undefined, options)
+  }
+
+  async deleteSituationWatchlist(monitorId: string, options?: RequestOptions) {
+    return this.request(`/v1/situations/watchlists/${encodeURIComponent(monitorId)}`, { method: "DELETE" }, undefined, options)
+  }
+
+  async createSituationWatchlist(body: SituationWatchParams, options?: RequestOptions) {
     const filters = body.filters ?? {}
     const parsed = situationMonitorFilterSchema.safeParse(filters)
     if (!parsed.success) throw new SecApiValidationError(filters, parsed.error.issues)
@@ -2909,32 +3012,40 @@ export class SecApiClient {
       })
     }
     const rawDelivery = body.delivery
-    if (!rawDelivery || typeof rawDelivery !== "object") {
-      throw new SecApiError({
-        message: "situations.watch requires an email or organization webhook delivery destination.",
-        status: 0,
-        code: "client_situation_watch_delivery_required",
-      })
-    }
-    const email = "email" in rawDelivery && typeof rawDelivery.email === "string" ? rawDelivery.email.trim() : null
-    if ("email" in rawDelivery && !email) {
+    const email = rawDelivery && "email" in rawDelivery && typeof rawDelivery.email === "string"
+      ? rawDelivery.email.trim()
+      : null
+    if (rawDelivery && "email" in rawDelivery && !email) {
       throw new SecApiError({
         message: "situations.watch requires a non-empty email delivery address.",
         status: 0,
         code: "client_situation_watch_delivery_required",
       })
     }
-    const delivery = "email" in rawDelivery
-      ? { type: "email" as const, config: { to: email! } }
-      : { type: "webhook" as const, config: { organizationEventFanout: true as const } }
-    return this.createMonitor({
-      name: body.name?.trim() || "Special Situations watch",
-      query: "situations.watch",
-      searchMode: "situation",
-      filters: parsed.data,
-      startAt: body.startAt,
-      delivery,
-    }, options)
+    if (rawDelivery && (this.options.apiKey || !this.options.bearerToken)) {
+      throw new SecApiError({
+        message: "situations.watch delivery activation requires a bearer-authenticated client without an API key. Create the watch without delivery when using x-api-key.",
+        status: 0,
+        code: "client_situation_watch_delivery_requires_bearer",
+      })
+    }
+    const delivery = rawDelivery
+      ? "email" in rawDelivery
+        ? { type: "email" as const, config: { to: email! } }
+        : { type: "webhook" as const, config: { organizationEventFanout: true as const } }
+      : undefined
+    return this.request("/v1/situations/watchlists", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: body.name?.trim() || "Special Situations watch",
+        query: "situations.watch",
+        searchMode: "situation",
+        filters: parsed.data,
+        startAt: body.startAt,
+        ...(delivery ? { delivery } : {}),
+      }),
+    }, undefined, options)
   }
 
   /** List immutable, numbered weekly Special Situations Digest issues. */
@@ -3177,7 +3288,15 @@ export class SecApiClient {
     return this.paginate<FundLetterThesis>((pageParams) => this.listFundLetterTheses(pageParams), params, options)
   }
 
-  /** List letter-writing managers with coverage stats and 13F cross-links. */
+  /**
+   * Fund Directory: list managers with coverage stats, directory references
+   * (website/Wikipedia/Grokipedia), the latest-13F summary, and 13F
+   * cross-links. Browse by fund/CIO name (`q`), `ticker` held, `theme`,
+   * `strategy`, or 13F `period` (YYYYQn); sort by `aum_desc` /
+   * `positions_desc` / `letters_desc` / `name_asc`. Directory filters and
+   * fields are server-side flag-gated — until the directory is enabled the
+   * list serves letter-publishing managers with the pre-directory fields.
+   */
   async listFundLetterManagers(params: RequestParams<FundLetterManagersParams> = {}) {
     return this.get("/v1/fund-letters/managers", params)
   }
@@ -3192,8 +3311,11 @@ export class SecApiClient {
    * description, founders, website, coverage counts, and the latest letter's
    * highlights (up to 5 headline theses). The manager twin of
    * getCompanyOverview; merged manager ids resolve via aliases.
+   * Pass `{ include: "positions" }` to inline `latest13F` — the latest
+   * canonical 13F report's top 10 positions (amendment-deduped); page beyond
+   * them via `links.holdings13F`.
    */
-  async getFundManagerOverview(managerId: string, params: RequestParams<Record<string, never>> = {}) {
+  async getFundManagerOverview(managerId: string, params: RequestParams<{ include?: string }> = {}) {
     return this.get(`/v1/fund-letters/managers/${encodeURIComponent(managerId)}/overview`, params)
   }
 
@@ -3477,8 +3599,6 @@ export type {
   CompensationRecord,
   CompensationComparison,
   Artifact,
-  Index,
-  IndexConstituent,
   Organization,
   ApiKey,
   UsageSummary,
@@ -3511,6 +3631,8 @@ export type {
   FundLetter,
   FundLetterThesis,
   FundLetterManager,
+  FundLetterManagerLatest13F,
+  FundLetterManagerReferences,
   FundLetterFund,
   FundLetterCompanyCoverage,
   FundLetterChange,

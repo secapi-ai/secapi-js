@@ -157,6 +157,9 @@ const optionalName = z
 
 const optionalToken = z.string().max(4096).nullish()
 const optionalNext = z.string().max(2048).nullish()
+// A compact, untrusted browser-to-server acquisition handoff. The API route
+// decodes and validates its contents; this bound prevents oversized bodies.
+const optionalAcquisition = z.string().max(2048).nullish()
 
 // Email fields normalize (trim+lowercase) at the schema boundary so the server
 // and client never disagree, and callers can store `data.email` directly.
@@ -173,6 +176,7 @@ export const authRegisterBodySchema = z
     agreed: z.boolean(),
     next: optionalNext,
     turnstileToken: optionalToken,
+    acquisition: optionalAcquisition,
   })
   .strict()
   .superRefine((val, ctx) => {
