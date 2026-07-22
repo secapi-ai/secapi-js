@@ -2,7 +2,7 @@
 
 `@secapi/sdk-js` is an ESM client for retrieving SEC filings, filing sections, financial statements, and ownership data from [SEC API](https://secapi.ai/developers). It includes TypeScript declarations. REST calls support Node.js 18 or newer; `streamFilings()` requires a global `WebSocket` (Node.js 21+, Bun, Deno, or browsers), so Node.js 18 callers must provide a polyfill or upgrade.
 
-[Documentation](https://docs.secapi.ai) · [Get an API key](https://secapi.ai/signup) · [Support](https://github.com/secapi-ai/secapi-js/issues) · [Status](https://status.secapi.ai)
+[Documentation](https://docs.secapi.ai) · [Pricing](https://secapi.ai/pricing) · [Get an API key](https://secapi.ai/signup) · [Support](https://github.com/secapi-ai/secapi-js/issues) · [Status](https://status.secapi.ai)
 
 ## Start here
 
