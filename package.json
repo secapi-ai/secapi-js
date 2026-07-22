@@ -1,7 +1,7 @@
 {
   "name": "@secapi/sdk-js",
   "version": "1.3.0",
-  "description": "JavaScript and TypeScript SDK for source-backed SEC filings and financial data",
+  "description": "JavaScript and TypeScript client for SEC API filings and financial data",
   "private": false,
   "type": "module",
   "engines": {
@@ -33,6 +33,8 @@
     "sec",
     "edgar",
     "sec-filings",
+    "sec-api",
+    "api",
     "financial-statements",
     "ownership-data",
     "typescript",

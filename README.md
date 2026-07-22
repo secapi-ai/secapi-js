@@ -1,6 +1,6 @@
 # SEC API JavaScript SDK
 
-`@secapi/sdk-js` is the JavaScript and TypeScript client for retrieving source-backed SEC filings, filing sections, financial statements, and ownership data.
+SEC API provides programmatic access to SEC filings, filing sections, financial statements, and ownership data. `@secapi/sdk-js` is its JavaScript and TypeScript client.
 
 ## Install and retrieve a filing
 
@@ -31,7 +31,7 @@ Run `node first-request.mjs`. It prints the current filing identity and request 
 
 ## Compatibility and support
 
-Node.js 18 or newer is required. `streamFilings()` needs a global `WebSocket` (Node.js 21+, Bun, Deno, or browsers); Node.js 18 callers need a polyfill or newer runtime. See the [JavaScript SDK guide](https://docs.secapi.ai/javascript-sdk) and [API reference](https://docs.secapi.ai/api-reference), check [status](https://status.secapi.ai), or [open an SDK issue](https://github.com/secapi-ai/secapi-js/issues).
+Node.js 18 or newer is required. `streamFilings()` needs a global `WebSocket` (Node.js 21+, Bun, Deno, or browsers); Node.js 18 callers need a polyfill or newer runtime. See the [JavaScript SDK guide](https://docs.secapi.ai/javascript-sdk) and [API reference](https://docs.secapi.ai/api-reference), review [pricing](https://secapi.ai/pricing), check [status](https://status.secapi.ai), or [open an SDK issue](https://github.com/secapi-ai/secapi-js/issues).
 
 ## Common requests
 
